@@ -29,14 +29,17 @@ new #[Title('Empresa')] class extends Component {
             <flux:text class="font-mono">{{ $company->cnpjValue()->formatted() }} · {{ $company->uf->value }} · {{ $company->ambiente->label() }}</flux:text>
         </div>
 
-        @can('update', $company)
-            <flux:button icon="pencil-square" :href="route('companies.edit', $company)" wire:navigate>{{ __('Editar') }}</flux:button>
-        @endcan
-    </div>
+        <div class="flex gap-2">
+            <form method="POST" action="{{ route('companies.sync', $company) }}">
+                @csrf
+                <flux:button type="submit" icon="arrow-path">{{ __('Sincronizar agora') }}</flux:button>
+            </form>
 
-    @if (session('status') === 'certificate-saved')
-        <flux:callout variant="success" icon="check-circle" :heading="__('Certificado salvo e validado.')" />
-    @endif
+            @can('update', $company)
+                <flux:button icon="pencil-square" :href="route('companies.edit', $company)" wire:navigate>{{ __('Editar') }}</flux:button>
+            @endcan
+        </div>
+    </div>
 
     <div class="grid gap-6 lg:grid-cols-2">
         <flux:card class="space-y-4">
@@ -78,13 +81,22 @@ new #[Title('Empresa')] class extends Component {
                     <dt class="text-zinc-500">{{ __('Última consulta') }}</dt><dd>{{ $state->last_checked_at?->timezone('America/Sao_Paulo')->format('d/m/Y H:i') ?? '—' }}</dd>
                     <dt class="text-zinc-500">{{ __('Próxima consulta') }}</dt><dd>{{ $state->next_check_at?->timezone('America/Sao_Paulo')->format('d/m/Y H:i') ?? __('Assim que houver certificado') }}</dd>
                     <dt class="text-zinc-500">{{ __('Último retorno') }}</dt><dd>{{ $state->last_cstat ? $state->last_cstat.' – '.$state->last_xmotivo : '—' }}</dd>
+                    @if ($state->last_error)
+                        <dt class="text-zinc-500">{{ __('Erro') }}</dt><dd class="text-red-600 dark:text-red-400">{{ $state->last_error }}</dd>
+                    @endif
+                    @if ($state->consecutive_656 > 0)
+                        <dt class="text-zinc-500">{{ __('Consumo indevido') }}</dt><dd class="text-red-600 dark:text-red-400">{{ trans_choice(':n bloqueio seguido|:n bloqueios seguidos', $state->consecutive_656, ['n' => $state->consecutive_656]) }}</dd>
+                    @endif
                 </dl>
             @endforeach
         </flux:card>
     </div>
 
     <div class="space-y-3">
-        <flux:heading size="lg">{{ __('Últimos documentos recebidos') }}</flux:heading>
+        <div class="flex items-center justify-between">
+            <flux:heading size="lg">{{ __('Últimos documentos recebidos') }}</flux:heading>
+            <flux:link :href="route('documents.index', ['company_id' => $company->id])" wire:navigate>{{ __('Ver todos') }}</flux:link>
+        </div>
 
         <flux:table>
             <flux:table.columns>
