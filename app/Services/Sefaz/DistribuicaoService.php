@@ -7,10 +7,12 @@ use App\Enums\DocumentoTipo;
 use App\Enums\SefazServico;
 use App\Models\Company;
 use App\Models\SyncState;
+use App\Notifications\CompanyBlocked;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use NFePHP\Common\Exception\SoapException;
 use Throwable;
@@ -122,6 +124,10 @@ class DistribuicaoService
         if ($ret->is(CStat::ConsumoIndevido)) {
             $state->consecutive_656++;
             Log::warning('SEFAZ consumo indevido (656)', ['company_id' => $company->id, 'consecutivos' => $state->consecutive_656]);
+
+            if ($state->consecutive_656 === config('sefaz.blocked_alert_after')) {
+                Notification::send($company->organization->managers(), new CompanyBlocked($company, $state->consecutive_656));
+            }
         } elseif ($ret->is(CStat::NenhumDocumento)) {
             $state->consecutive_656 = 0;
         } else {

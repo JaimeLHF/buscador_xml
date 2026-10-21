@@ -21,6 +21,9 @@ return [
     // Limite da NT para consChNFe/consNSU: 20 consultas por hora por CNPJ.
     'cons_chave_per_hour' => 20,
 
+    // Alerta por e-mail/painel quando a empresa acumula esta quantidade de 656 seguidos.
+    'blocked_alert_after' => (int) env('SEFAZ_BLOCKED_ALERT_AFTER', 3),
+
     'timeout_seconds' => (int) env('SEFAZ_TIMEOUT', 30),
 
     'xml_disk' => env('SEFAZ_XML_DISK', 'local'),
