@@ -14,6 +14,12 @@ new #[Title('Empresa')] class extends Component {
 
         $this->company = $company->load(['activeCertificate', 'syncStates']);
     }
+
+    #[Livewire\Attributes\Computed]
+    public function recentDocuments()
+    {
+        return $this->company->documents()->latest('data_emissao')->limit(20)->get();
+    }
 }; ?>
 
 <section class="w-full space-y-8">
@@ -75,5 +81,34 @@ new #[Title('Empresa')] class extends Component {
                 </dl>
             @endforeach
         </flux:card>
+    </div>
+
+    <div class="space-y-3">
+        <flux:heading size="lg">{{ __('Últimos documentos recebidos') }}</flux:heading>
+
+        <flux:table>
+            <flux:table.columns>
+                <flux:table.column>{{ __('Emissão') }}</flux:table.column>
+                <flux:table.column>{{ __('Emitente') }}</flux:table.column>
+                <flux:table.column align="end">{{ __('Valor') }}</flux:table.column>
+                <flux:table.column>{{ __('Situação') }}</flux:table.column>
+                <flux:table.column>{{ __('Manifestação') }}</flux:table.column>
+            </flux:table.columns>
+            <flux:table.rows>
+                @forelse ($this->recentDocuments as $doc)
+                    <flux:table.row :key="$doc->id">
+                        <flux:table.cell>{{ $doc->data_emissao?->timezone('America/Sao_Paulo')->format('d/m/Y') }}</flux:table.cell>
+                        <flux:table.cell><flux:link :href="route('documents.show', $doc)" wire:navigate>{{ $doc->emitente_nome }}</flux:link></flux:table.cell>
+                        <flux:table.cell align="end">{{ number_format((float) $doc->valor_total, 2, ',', '.') }}</flux:table.cell>
+                        <flux:table.cell>{{ $doc->situacao->label() }}{{ $doc->tem_xml_completo ? '' : ' · '.__('resumo') }}</flux:table.cell>
+                        <flux:table.cell>{{ $doc->manifestacao_status?->label() ?? '—' }}</flux:table.cell>
+                    </flux:table.row>
+                @empty
+                    <flux:table.row>
+                        <flux:table.cell colspan="5" class="text-center">{{ __('Nenhum documento recebido ainda.') }}</flux:table.cell>
+                    </flux:table.row>
+                @endforelse
+            </flux:table.rows>
+        </flux:table>
     </div>
 </section>
