@@ -26,17 +26,17 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(CertificateVault::class, function (): CertificateVault {
+            $parse = fn (string $key): string => Str::startsWith($key, 'base64:') ? base64_decode(Str::after($key, 'base64:')) : $key;
             $key = (string) config('certificates.key');
 
             if ($key === '') {
                 throw new RuntimeException('CERT_ENCRYPTION_KEY não configurada.');
             }
 
-            if (Str::startsWith($key, 'base64:')) {
-                $key = base64_decode(Str::after($key, 'base64:'));
-            }
+            $encrypter = (new Encrypter($parse($key), config('certificates.cipher')))
+                ->previousKeys(array_map(fn (string $k) => $parse(trim($k)), config('certificates.previous_keys')));
 
-            return new EncrypterCertificateVault(new Encrypter($key, config('certificates.cipher')));
+            return new EncrypterCertificateVault($encrypter);
         });
 
         $this->app->bind(SefazGateway::class, SpedNfeGateway::class);
