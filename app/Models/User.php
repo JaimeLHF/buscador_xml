@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Enums\OrganizationRole;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Carbon;
@@ -25,6 +28,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
  * @property string|null $remember_token
+ * @property int|null $current_organization_id
+ * @property-read Organization|null $currentOrganization
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -46,6 +51,43 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /** @return BelongsToMany<Organization, $this, Membership> */
+    public function organizations(): BelongsToMany
+    {
+        return $this->belongsToMany(Organization::class)
+            ->using(Membership::class)
+            ->withPivot('role')
+            ->withTimestamps();
+    }
+
+    /** @return BelongsTo<Organization, $this> */
+    public function currentOrganization(): BelongsTo
+    {
+        return $this->belongsTo(Organization::class, 'current_organization_id');
+    }
+
+    public function roleIn(Organization|int $organization): ?OrganizationRole
+    {
+        $id = $organization instanceof Organization ? $organization->id : $organization;
+
+        /** @var Membership|null $membership */
+        $membership = $this->organizations()->whereKey($id)->first()?->pivot;
+
+        return $membership?->role;
+    }
+
+    public function belongsToOrganization(Organization|int $organization): bool
+    {
+        return $this->roleIn($organization) !== null;
+    }
+
+    public function switchOrganization(Organization $organization): void
+    {
+        abort_unless($this->belongsToOrganization($organization), 403);
+
+        $this->forceFill(['current_organization_id' => $organization->id])->save();
     }
 
     /**
