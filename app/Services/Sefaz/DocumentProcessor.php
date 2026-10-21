@@ -11,6 +11,7 @@ use App\Jobs\SendCienciaOperacao;
 use App\Models\Company;
 use App\Models\DfeDocument;
 use App\Models\DfeEvent;
+use App\Services\Sefaz\Exceptions\SefazException;
 use App\Support\Cnpj;
 use Carbon\CarbonImmutable;
 use DOMDocument;
@@ -33,8 +34,11 @@ class DocumentProcessor
         }
 
         $dom = new DOMDocument;
-        $dom->loadXML($doc->xml, LIBXML_NONET);
-        $root = $dom->documentElement;
+        $root = @$dom->loadXML($doc->xml, LIBXML_NONET) ? $dom->documentElement : null;
+
+        if ($root === null) {
+            throw SefazException::invalidResponse();
+        }
 
         // chave e tpEvento compõem caminhos de arquivo: só valores no formato oficial são aceitos.
         $chave = $this->text($root, 'chNFe') ?? substr((string) $this->attribute($root, 'infNFe', 'Id'), 3);
