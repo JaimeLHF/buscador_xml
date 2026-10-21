@@ -27,6 +27,16 @@ class XmlStorage
         return $path;
     }
 
+    public function putUnsupported(Company $company, string $nsu, string $rawSchema, string $xml): string
+    {
+        $schema = preg_replace('/[^A-Za-z0-9_.]/', '', $rawSchema) ?: 'desconhecido';
+        $path = sprintf('dfe/%d/nao-processados/%s-%s.xml', $company->id, preg_replace('/\D/', '', $nsu), $schema);
+
+        Storage::disk(config('sefaz.xml_disk'))->put($path, $xml);
+
+        return $path;
+    }
+
     public function get(string $path): ?string
     {
         return Storage::disk(config('sefaz.xml_disk'))->get($path);

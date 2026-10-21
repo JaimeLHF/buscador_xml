@@ -25,7 +25,9 @@ class DocumentProcessor
     public function process(Company $company, DocZip $doc): void
     {
         if ($doc->schema === null) {
-            Log::info('Schema de docZip não suportado', ['company_id' => $company->id, 'schema' => $doc->rawSchema, 'nsu' => $doc->nsu]);
+            // Cada NSU só é entregue uma vez: schemas ainda não tratados (ex.: resCTe) são guardados para processamento futuro.
+            $this->storage->putUnsupported($company, $doc->nsu, $doc->rawSchema, $doc->xml);
+            Log::info('Schema de docZip não suportado (XML guardado)', ['company_id' => $company->id, 'schema' => $doc->rawSchema, 'nsu' => $doc->nsu]);
 
             return;
         }
