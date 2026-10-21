@@ -4,6 +4,9 @@ namespace App\Providers;
 
 use App\Services\Certificates\CertificateVault;
 use App\Services\Certificates\EncrypterCertificateVault;
+use App\Services\CnpjLookup\BrasilApiProvider;
+use App\Services\CnpjLookup\CnpjaOpenProvider;
+use App\Services\CnpjLookup\CnpjLookup;
 use Carbon\CarbonImmutable;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Date;
@@ -33,6 +36,11 @@ class AppServiceProvider extends ServiceProvider
 
             return new EncrypterCertificateVault(new Encrypter($key, config('certificates.cipher')));
         });
+
+        $this->app->bind(CnpjLookup::class, fn ($app): CnpjLookup => new CnpjLookup([
+            $app->make(BrasilApiProvider::class),
+            $app->make(CnpjaOpenProvider::class),
+        ]));
     }
 
     /**
