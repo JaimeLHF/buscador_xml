@@ -4,12 +4,13 @@ namespace App\Models;
 
 use App\Enums\DfeSchema;
 use App\Enums\DocumentoTipo;
+use App\Enums\ManifestacaoStatus;
 use App\Enums\Situacao;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Carbon\CarbonImmutable;
 
 /**
  * @property int $id
@@ -24,7 +25,7 @@ use Carbon\CarbonImmutable;
  * @property string|null $valor_total
  * @property Situacao $situacao
  * @property bool $tem_xml_completo
- * @property string|null $manifestacao_status
+ * @property ManifestacaoStatus|null $manifestacao_status
  * @property string|null $xml_path
  * @property string|null $resumo_xml_path
  */
@@ -37,6 +38,7 @@ class DfeDocument extends Model
             'tipo' => DocumentoTipo::class,
             'schema' => DfeSchema::class,
             'situacao' => Situacao::class,
+            'manifestacao_status' => ManifestacaoStatus::class,
             'data_emissao' => 'datetime',
             'valor_total' => 'decimal:2',
             'tem_xml_completo' => 'boolean',

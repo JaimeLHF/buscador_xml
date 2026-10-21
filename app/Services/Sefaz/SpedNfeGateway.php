@@ -3,6 +3,7 @@
 namespace App\Services\Sefaz;
 
 use App\Enums\Ambiente;
+use App\Enums\TipoEvento;
 use App\Models\Company;
 use App\Services\Sefaz\Exceptions\SefazException;
 use NFePHP\Common\Certificate;
@@ -24,6 +25,14 @@ class SpedNfeGateway implements SefazGateway
     public function consChave(Company $company, string $chave): string
     {
         return $this->tools($company)->sefazDistDFe(0, 0, $chave);
+    }
+
+    public function manifestar(Company $company, string $chave, TipoEvento $tipo, int $nSeqEvento, string $xJust = ''): EventoResponse
+    {
+        $tools = $this->tools($company);
+        $response = $tools->sefazManifesta($chave, (int) $tipo->value, $xJust, $nSeqEvento);
+
+        return new EventoResponse($tools->lastRequest, $response);
     }
 
     private function tools(Company $company): Tools

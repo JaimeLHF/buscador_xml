@@ -4,11 +4,14 @@ namespace App\Services\Sefaz;
 
 use App\Enums\DfeSchema;
 use App\Enums\DocumentoTipo;
+use App\Enums\ManifestacaoStatus;
 use App\Enums\Situacao;
 use App\Enums\TipoEvento;
+use App\Jobs\SendCienciaOperacao;
 use App\Models\Company;
 use App\Models\DfeDocument;
 use App\Models\DfeEvent;
+use App\Support\Cnpj;
 use Carbon\CarbonImmutable;
 use DOMDocument;
 use DOMElement;
@@ -65,6 +68,35 @@ class DocumentProcessor
         ])->save();
 
         $this->linkOrphanEvents($company, $document);
+        $this->requestCiencia($company, $document);
+    }
+
+    /** Só o resumo chegou: com a manifestação automática ligada, a Ciência libera o XML completo. */
+    private function requestCiencia(Company $company, DfeDocument $document): void
+    {
+        if ($document->manifestacao_status !== null) {
+            return;
+        }
+
+        // Manifestação nossa que chegou antes do resumo (ou feita fora do sistema) já define o status.
+        $proprio = $company->events()->where('chave', $document->chave)->where('direcao', 'enviado')
+            ->whereIn('tp_evento', array_map(fn (TipoEvento $t) => $t->value, TipoEvento::manifestacoes()))
+            ->latest('data_evento')->first();
+
+        if ($proprio) {
+            $document->update(['manifestacao_status' => ManifestacaoStatus::fromEvento(TipoEvento::from($proprio->tp_evento))]);
+
+            return;
+        }
+
+        if (! $company->manifestacao_automatica || $document->situacao !== Situacao::Autorizada) {
+            return;
+        }
+
+        $document->update(['manifestacao_status' => ManifestacaoStatus::CienciaPendente]);
+
+        // afterCommit: o job só existe se a página inteira da distribuição for gravada.
+        SendCienciaOperacao::dispatch($document)->afterCommit();
     }
 
     private function completo(Company $company, DocZip $doc, DOMElement $root): void
@@ -112,21 +144,30 @@ class DocumentProcessor
             return;
         }
 
+        $tipo = TipoEvento::tryFrom($tpEvento);
+        $autor = $this->text($info, 'CNPJ') ?? $this->text($info, 'CPF');
+        $proprio = $tipo?->isManifestacao() && $autor !== null && Cnpj::isValid($autor) && Cnpj::from($autor)->root() === $company->cnpjValue()->root();
+
         $event->fill([
             'dfe_document_id' => $document?->id,
             'nsu' => $doc->nsu,
             'schema' => $doc->schema,
             'descricao' => $this->text($info, 'descEvento') ?? $this->text($info, 'xEvento'),
-            'autor_cnpj' => $this->text($info, 'CNPJ') ?? $this->text($info, 'CPF'),
+            'autor_cnpj' => $autor,
             'data_evento' => $this->date($this->text($info, 'dhEvento')),
             'protocolo' => $retorno ? $this->text($retorno, 'nProt') : $this->text($info, 'nProt'),
             'cstat' => $cstat,
-            'direcao' => 'recebido',
+            // Manifestação nossa que volta pela distribuição continua marcada como enviada.
+            'direcao' => $proprio || $event->direcao === 'enviado' ? 'enviado' : 'recebido',
             'xml_path' => $this->storage->putEvent($company, $chave, $tpEvento, $seq, $doc->schema->value, $doc->xml),
         ])->save();
 
         if ($document && $this->isValidCancellation($event)) {
             $document->update(['situacao' => Situacao::Cancelada]);
+        }
+
+        if ($document && $proprio && ! $document->manifestacao_status?->isConclusive()) {
+            $document->update(['manifestacao_status' => ManifestacaoStatus::fromEvento($tipo)]);
         }
     }
 
