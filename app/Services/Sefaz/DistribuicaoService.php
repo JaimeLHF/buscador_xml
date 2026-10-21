@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
-use NFePHP\Common\Exception\SoapException;
 use Throwable;
 
 /**
@@ -23,6 +22,7 @@ use Throwable;
  *  137 → nada novo: espera 1 hora.
  *  656 → consumo indevido: para e espera 1 hora (usando o ultNSU retornado, se houver).
  *  Qualquer outro retorno também espera 1 hora, para nunca provocar um 656.
+ *  Falha de comunicação: ver FailureClassifier.
  */
 class DistribuicaoService
 {
@@ -92,6 +92,7 @@ class DistribuicaoService
         $this->logger->log($company, SefazServico::DistNsu, $started, $ret, ultNsuEnviado: $sent);
 
         $state->fill([
+            'consecutive_failures' => 0,
             'last_checked_at' => now(),
             'last_cstat' => $ret->cStat,
             'last_xmotivo' => Str::limit($ret->xMotivo, 250),
@@ -165,26 +166,25 @@ class DistribuicaoService
 
     private function failed(Company $company, SyncState $state, string $sent, Throwable $e, float $started): SyncOutcome
     {
-        $message = Str::limit($this->safeMessage($e), 250);
+        $message = FailureClassifier::safeMessage($e);
 
         $this->logger->logError($company, SefazServico::DistNsu, $started, $message, ultNsuEnviado: $sent);
-        Log::error('Falha na distribuição DF-e', ['company_id' => $company->id, 'exception' => $e::class, 'message' => $message]);
+        Log::error('Falha na distribuição DF-e', ['company_id' => $company->id, 'exception' => $e::class, 'code' => $e->getCode(), 'message' => $message]);
 
-        // Falha de comunicação tende a ser transitória; erro de dados/configuração (ex.: XML inválido) não se resolve sozinho.
-        $wait = $e instanceof SoapException ? config('sefaz.wait_after_network_error_minutes') : config('sefaz.wait_after_no_docs_minutes');
+        $failures = $state->consecutive_failures + 1;
+
+        // Backoff exponencial só quando a requisição certamente não chegou à SEFAZ; nos demais casos, a espera da NT.
+        $next = FailureClassifier::isRetryableSoon($e)
+            ? now()->addMinutes(min(config('sefaz.retry_base_minutes') * 2 ** ($failures - 1), config('sefaz.retry_max_minutes')))
+            : $this->waitOneHour($company);
 
         $state->update([
             'last_checked_at' => now(),
             'last_error' => $message,
-            'next_check_at' => now()->addMinutes($wait),
+            'consecutive_failures' => $failures,
+            'next_check_at' => $next,
         ]);
 
         return SyncOutcome::Failed;
-    }
-
-    /** Mensagens de exceção do cURL/sped podem trazer caminhos de arquivos temporários de chave; ficam só o essencial. */
-    private function safeMessage(Throwable $e): string
-    {
-        return (string) preg_replace('#/[^\s\]]*(sped|tmp)[^\s\]]*#i', '[path]', $e->getMessage());
     }
 }

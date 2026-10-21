@@ -45,7 +45,7 @@ class SefazRequestLogger
             'ult_nsu_enviado' => $ultNsuEnviado,
             'chave' => $chave,
             'duracao_ms' => $this->elapsed($started),
-            'erro' => Str::limit($error, 250),
+            'erro' => FailureClassifier::safeMessage($error),
         ]);
     }
 
