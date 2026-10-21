@@ -6,6 +6,7 @@ use App\Enums\Situacao;
 use App\Models\Company;
 use App\Models\SyncState;
 use App\Services\Sefaz\DistribuicaoService;
+use App\Services\Sefaz\FailureClassifier;
 use App\Services\Sefaz\SyncOutcome;
 use Illuminate\Support\Facades\Storage;
 use NFePHP\Common\Exception\SoapException;
@@ -115,7 +116,7 @@ it('waits one hour on unexpected rejections too', function () {
         ->next_check_at->toEqual(now()->addMinutes(65));
 });
 
-it('records network errors without advancing NSU and retries later', function () {
+it('treats ambiguous failures (timeout) as possibly processed and waits the full hour', function () {
     fakeSefaz()->push(SoapException::soapFault('Operation timed out after 30001 milliseconds [/tmp/sped-abc/12345678000195/certs/x.pem]', 28));
 
     expect($this->service->sync($this->company))->toBe(SyncOutcome::Failed);
@@ -124,7 +125,8 @@ it('records network errors without advancing NSU and retries later', function ()
         ->ult_nsu->toBe('000000000000000')
         ->last_error->toContain('timed out')
         ->last_error->not->toContain('/tmp/sped')
-        ->next_check_at->toEqual(now()->addMinutes(15));
+        ->consecutive_failures->toBe(1)
+        ->next_check_at->toEqual(now()->addMinutes(65));
 
     expect($this->company->sefazRequests()->sole())
         ->servico->toBe(SefazServico::DistNsu)
@@ -188,3 +190,36 @@ it('waits one hour on non-network errors such as schema validation', function ()
 
     expect(state()->next_check_at)->toEqual(now()->addMinutes(65));
 });
+
+it('retries undelivered requests with exponential backoff and resets after a response', function () {
+    $connectError = fn () => SoapException::soapFault('Failed to connect to hom1.nfe.fazenda.gov.br port 443', 7);
+
+    foreach ([2, 4, 8, 16, 32, 60, 60] as $expectedMinutes) {
+        fakeSefaz()->push($connectError());
+        $this->service->sync($this->company);
+
+        expect(state()->next_check_at)->toEqual(now()->addMinutes($expectedMinutes));
+        $this->travelTo(state()->next_check_at);
+    }
+
+    expect(state()->ult_nsu)->toBe('000000000000000');
+
+    fakeSefaz()->push(F::file('ret_137.xml'));
+    $this->service->sync($this->company);
+
+    expect(state())->consecutive_failures->toBe(0)->last_error->toBeNull();
+});
+
+it('classifies which failures may have reached SEFAZ', function (int $code, bool $retryable) {
+    expect(FailureClassifier::isRetryableSoon(SoapException::soapFault('x', $code)))->toBe($retryable);
+})->with([
+    'DNS' => [6, true],
+    'conexão recusada' => [7, true],
+    'handshake TLS' => [35, true],
+    'certificado recusado (403)' => [403, true],
+    'timeout' => [28, false],
+    'resposta vazia' => [52, false],
+    'erro 500' => [89, false],
+    'serviço indisponível (503)' => [503, false],
+    'retorno inválido' => [99, false],
+]);

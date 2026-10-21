@@ -12,8 +12,10 @@ return [
     'wait_after_no_docs_minutes' => (int) env('SEFAZ_WAIT_AFTER_137', 65),
     'wait_after_656_minutes' => (int) env('SEFAZ_WAIT_AFTER_656', 65),
 
-    // Falha de rede/timeout: não sabemos se a SEFAZ processou, então espera-se antes de tentar de novo.
-    'wait_after_network_error_minutes' => (int) env('SEFAZ_WAIT_AFTER_ERROR', 15),
+    // Falha em que a requisição certamente não chegou à SEFAZ (DNS, conexão, TLS): backoff exponencial 2, 4, 8… até 60 min.
+    // Falhas ambíguas (timeout, 5xx, resposta vazia) esperam a hora inteira da NT. Ver FailureClassifier.
+    'retry_base_minutes' => (int) env('SEFAZ_RETRY_BASE_MINUTES', 2),
+    'retry_max_minutes' => (int) env('SEFAZ_RETRY_MAX_MINUTES', 60),
 
     // Páginas de distNSU por execução do job; se ainda houver documentos, continua no minuto seguinte.
     'max_pages_per_run' => (int) env('SEFAZ_MAX_PAGES', 20),
