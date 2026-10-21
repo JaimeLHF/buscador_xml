@@ -105,7 +105,7 @@ class DocumentProcessor
             return;
         }
 
-        if (! $company->manifestacao_automatica || $document->situacao !== Situacao::Autorizada) {
+        if (! $company->manifestacao_automatica || $document->situacao !== Situacao::Autorizada || ! $document->cienciaNoPrazo()) {
             return;
         }
 

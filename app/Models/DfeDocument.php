@@ -45,6 +45,13 @@ class DfeDocument extends Model
         ];
     }
 
+    /** Margem de 1 hora sobre o prazo da SEFAZ, já que a data guardada é a de emissão e o prazo conta da autorização. */
+    public function cienciaNoPrazo(): bool
+    {
+        return $this->data_emissao !== null
+            && $this->data_emissao->greaterThan(now()->subDays(config('sefaz.ciencia_prazo_dias'))->addHour());
+    }
+
     /** @return BelongsTo<Company, $this> */
     public function company(): BelongsTo
     {

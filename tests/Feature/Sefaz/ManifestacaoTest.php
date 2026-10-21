@@ -18,6 +18,7 @@ use App\Services\Sefaz\DocumentProcessor;
 use App\Services\Sefaz\DocZip;
 use App\Services\Sefaz\Exceptions\ManifestacaoException;
 use App\Services\Sefaz\ManifestacaoService;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -27,6 +28,8 @@ use Tests\Support\SefazFixtures as F;
 const CH = '42261011222333000181550010000001231123456788';
 
 beforeEach(function () {
+    // Os fixtures são de 20/10/2026: fixar a data mantém a Ciência dentro do prazo de 10 dias em qualquer dia em que o teste rodar.
+    $this->travelTo(CarbonImmutable::parse('2026-10-21 12:00:00', 'America/Sao_Paulo'));
     Storage::fake('local');
     // Os jobs são executados explicitamente em cada teste; aqui só se verifica o enfileiramento.
     Queue::fake([SendCienciaOperacao::class, FetchFullDocument::class]);
@@ -205,4 +208,14 @@ it('hides manifestation actions from members and other organizations', function 
 
     $stranger = User::factory()->withOrganization()->create();
     $this->actingAs($stranger)->get(route('documents.show', $document))->assertForbidden();
+});
+
+it('does not send Ciência after the 10 day SEFAZ deadline', function () {
+    $this->travelTo(now()->setDate(2026, 11, 15));
+    $document = receiveResumo($this->company);
+
+    Queue::assertNotPushed(SendCienciaOperacao::class);
+    expect($document->manifestacao_status)->toBeNull()
+        ->and(app(ManifestacaoService::class)->disponiveis($document))->not->toContain(TipoEvento::CienciaOperacao)
+        ->and(fn () => app(ManifestacaoService::class)->manifestar($document, TipoEvento::CienciaOperacao))->toThrow(ManifestacaoException::class, 'prazo');
 });
