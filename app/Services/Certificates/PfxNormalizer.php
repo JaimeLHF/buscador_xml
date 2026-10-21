@@ -15,7 +15,7 @@ use Symfony\Component\Process\Process;
  */
 class PfxNormalizer
 {
-    public function normalize(string $pfx, string $password): string
+    public function normalize(#[\SensitiveParameter] string $pfx, #[\SensitiveParameter] string $password): string
     {
         $parts = $this->readNative($pfx, $password) ?? $this->readLegacy($pfx, $password);
 
@@ -38,7 +38,7 @@ class PfxNormalizer
     /**
      * @return array{cert: string, pkey: string, extracerts: list<string>}|null
      */
-    private function readNative(string $pfx, string $password): ?array
+    private function readNative(#[\SensitiveParameter] string $pfx, #[\SensitiveParameter] string $password): ?array
     {
         $certs = [];
 
@@ -64,7 +64,7 @@ class PfxNormalizer
     /**
      * @return array{cert: string, pkey: string, extracerts: list<string>}
      */
-    private function readLegacy(string $pfx, string $password): array
+    private function readLegacy(#[\SensitiveParameter] string $pfx, #[\SensitiveParameter] string $password): array
     {
         $dir = sys_get_temp_dir().'/pfx-'.Str::random(32);
         mkdir($dir, 0700);
@@ -100,7 +100,7 @@ class PfxNormalizer
     /**
      * @return array{cert: string, pkey: string, extracerts: list<string>}
      */
-    private function splitPem(string $pem): array
+    private function splitPem(#[\SensitiveParameter] string $pem): array
     {
         preg_match_all('/-----BEGIN CERTIFICATE-----.+?-----END CERTIFICATE-----/s', $pem, $certs);
         preg_match('/-----BEGIN (?:RSA |ENCRYPTED )?PRIVATE KEY-----.+?-----END (?:RSA |ENCRYPTED )?PRIVATE KEY-----/s', $pem, $key);

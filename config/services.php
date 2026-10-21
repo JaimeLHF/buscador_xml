@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'horizon' => [
+        'admins' => env('HORIZON_ADMINS', ''),
+    ],
+
 ];

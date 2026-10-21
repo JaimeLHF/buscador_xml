@@ -16,7 +16,7 @@ class StoreCompanyCertificate
     /**
      * @throws InvalidCertificateException
      */
-    public function handle(Company $company, string $pfx, string $password): Certificate
+    public function handle(Company $company, #[\SensitiveParameter] string $pfx, #[\SensitiveParameter] string $password): Certificate
     {
         $data = $this->inspector->inspect($pfx, $password);
 

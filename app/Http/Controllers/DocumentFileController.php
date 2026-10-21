@@ -34,7 +34,7 @@ class DocumentFileController extends Controller
         try {
             $pdf = $renderer->render($document);
         } catch (RuntimeException $e) {
-            return back()->with('error', $e->getMessage());
+            return redirect()->route('documents.show', $document)->with('error', $e->getMessage());
         }
 
         return response($pdf, 200, [

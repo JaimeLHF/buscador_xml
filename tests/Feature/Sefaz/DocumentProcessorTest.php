@@ -112,3 +112,12 @@ it('ignores unknown schemas', function () {
 
     expect($this->company->documents()->count())->toBe(0);
 });
+
+it('skips documents whose key is not a 44 digit access key', function () {
+    $xml = str_replace('<chNFe>'.CHAVE.'</chNFe>', '<chNFe>../../../../etc/x</chNFe>', F::file('resNFe.xml'));
+
+    $this->processor->process($this->company, new DocZip('1', 'resNFe_v1.01.xsd', DfeSchema::ResNFe, $xml));
+
+    expect($this->company->documents()->count())->toBe(0)
+        ->and(Storage::disk('local')->allFiles())->toBe([]);
+});

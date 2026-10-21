@@ -5,11 +5,11 @@ namespace App\Notifications;
 use App\Models\Organization;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class OrganizationInvited extends Notification implements ShouldQueue
+/** Enviado de forma síncrona de propósito: o token em claro não deve ficar no payload da fila (Redis/Horizon). */
+class OrganizationInvited extends Notification
 {
     use Queueable;
 

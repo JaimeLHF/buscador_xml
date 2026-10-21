@@ -12,7 +12,7 @@ class CertificateInspector
 {
     public function __construct(private PfxNormalizer $normalizer) {}
 
-    public function inspect(string $pfx, string $password): CertificateData
+    public function inspect(#[\SensitiveParameter] string $pfx, #[\SensitiveParameter] string $password): CertificateData
     {
         $normalized = $this->normalizer->normalize($pfx, $password);
 

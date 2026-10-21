@@ -33,7 +33,8 @@ return [
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
+            // XMLs fiscais e ZIPs ficam aqui: nunca servir por URL, só pelos controllers com Policy.
+            'serve' => false,
             'throw' => false,
             'report' => false,
         ],
