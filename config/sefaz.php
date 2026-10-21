@@ -5,13 +5,26 @@ return [
     // 1 = produção, 2 = homologação. Padrão de desenvolvimento é sempre homologação.
     'tp_amb' => (int) env('SEFAZ_TP_AMB', 2),
 
+    // Trava de segurança: empresas em produção só consultam a SEFAZ com isto explicitamente ligado.
+    'allow_production' => (bool) env('SEFAZ_ALLOW_PRODUCTION', false),
+
     // NT 2014.002: após cStat 137 ou 656 só se pode consultar o mesmo CNPJ depois de 1 hora.
     'wait_after_no_docs_minutes' => (int) env('SEFAZ_WAIT_AFTER_137', 65),
     'wait_after_656_minutes' => (int) env('SEFAZ_WAIT_AFTER_656', 65),
+
+    // Falha de rede/timeout: não sabemos se a SEFAZ processou, então espera-se antes de tentar de novo.
+    'wait_after_network_error_minutes' => (int) env('SEFAZ_WAIT_AFTER_ERROR', 15),
+
+    // Páginas de distNSU por execução do job; se ainda houver documentos, continua no minuto seguinte.
+    'max_pages_per_run' => (int) env('SEFAZ_MAX_PAGES', 20),
 
     // Limite da NT para consChNFe/consNSU: 20 consultas por hora por CNPJ.
     'cons_chave_per_hour' => 20,
 
     'timeout_seconds' => (int) env('SEFAZ_TIMEOUT', 30),
+
+    'xml_disk' => env('SEFAZ_XML_DISK', 'local'),
+
+    'queue' => env('SEFAZ_QUEUE', 'sefaz'),
 
 ];

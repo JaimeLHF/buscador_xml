@@ -23,6 +23,8 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
+        <env name="REDIS_DB" value="15" force="true"/>
+        <env name="REDIS_CACHE_DB" value="15" force="true"/>
         <env name="CERT_ENCRYPTION_KEY" value="base64:dGVzdGluZy1vbmx5LWNlcnQta2V5LTMyLWJ5dGVzISE="/>
         <env name="DB_DATABASE" value="testing"/>
         <env name="DB_URL" value=""/>
