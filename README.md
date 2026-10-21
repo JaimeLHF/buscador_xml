@@ -74,7 +74,37 @@ Resultado: o certificado armazenado é sempre moderno, e o sped-nfe o lê sem ne
 
 ## Ambiente SEFAZ
 
-`SEFAZ_TP_AMB=2` (homologação) é o padrão. Produção só com mudança explícita.
+`SEFAZ_TP_AMB=2` (homologação) é o padrão. Empresas cadastradas como produção **não** consultam a SEFAZ enquanto `SEFAZ_ALLOW_PRODUCTION=false` (nem são enfileiradas).
+
+## Distribuição DF-e (NT 2014.002)
+
+Fluxo: `scheduler` (a cada minuto) → `sefaz:dispatch-due` → job `SyncCompanyDfe` na fila `sefaz` (Horizon) → `DistribuicaoService`.
+
+| Retorno | Ação |
+|---|---|
+| 138 | Processa os docZip e segue com o `ultNSU` retornado enquanto `ultNSU < maxNSU`; ao alcançar, espera 65 min |
+| 137 | Grava `ultNSU`, espera 65 min |
+| 656 | Para, adota o `ultNSU` retornado (se houver), espera 65 min e conta `consecutive_656` |
+| Outra rejeição / erro de dados | Espera 65 min |
+| Falha de rede (SoapException) | Não avança NSU, tenta de novo em 15 min |
+
+Garantias:
+
+- `ultNSU` nunca retrocede; documentos e avanço do NSU de cada página ficam na mesma transação.
+- Lock atômico por CNPJ+ambiente (`Cache::lock`) e job único por empresa (`ShouldBeUnique`, `tries = 1`).
+- A espera de 1 hora é compartilhada por CNPJ (`CnpjCooldown`), mesmo que o CNPJ esteja cadastrado em mais de uma organização.
+- `consChNFe`/`consNSU`: janela deslizante de 1 hora no Redis (script Lua atômico), máximo 20 por CNPJ.
+- `sefaz_requests` registra serviço, cStat, NSUs, duração e erro — nunca XML, senha ou certificado.
+- XMLs gravados exatamente como recebidos em `storage/app/private/dfe/{empresa}/...` (disco `SEFAZ_XML_DISK`, pronto para S3).
+
+Comandos:
+
+```bash
+./vendor/bin/sail artisan sefaz:dispatch-due   # o que o scheduler roda
+./vendor/bin/sail artisan sefaz:sync 1         # sincroniza a empresa 1 agora (respeita next_check_at e o lock)
+```
+
+**Limitação conhecida:** o sped-nfe 5.2.8 ainda valida o `distDFeInt` com XSD que só aceita CNPJ numérico. Empresas com CNPJ alfanumérico registram o erro de validação e aguardam 65 min até a biblioteca ser atualizada.
 
 ## Testes
 
