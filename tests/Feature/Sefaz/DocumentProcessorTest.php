@@ -107,10 +107,11 @@ it('is idempotent when the same NSU is processed twice', function () {
         ->and($this->company->events()->count())->toBe(1);
 });
 
-it('ignores unknown schemas', function () {
+it('keeps the XML of schemas not handled yet, since each NSU is delivered only once', function () {
     $this->processor->process($this->company, new DocZip('000000000000001', 'resCTe_v1.00.xsd', null, '<resCTe/>'));
 
-    expect($this->company->documents()->count())->toBe(0);
+    expect($this->company->documents()->count())->toBe(0)
+        ->and(Storage::disk('local')->get("dfe/{$this->company->id}/nao-processados/000000000000001-resCTe_v1.00.xsd.xml"))->toBe('<resCTe/>');
 });
 
 it('skips documents whose key is not a 44 digit access key', function () {
