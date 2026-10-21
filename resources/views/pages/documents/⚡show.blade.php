@@ -82,7 +82,11 @@ new #[Title('Documento')] class extends Component {
             <flux:text class="font-mono break-all">{{ $document->chave }}</flux:text>
         </div>
 
-        <div class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+            <flux:button size="sm" icon="arrow-down-tray" :href="route('documents.xml', $document)">{{ __('XML') }}</flux:button>
+            @if ($document->tem_xml_completo)
+                <flux:button size="sm" icon="document" :href="route('documents.danfe', $document)" target="_blank">{{ __('DANFE') }}</flux:button>
+            @endif
             <flux:badge :color="match ($document->situacao) { App\Enums\Situacao::Autorizada => 'green', App\Enums\Situacao::Cancelada => 'red', default => 'amber' }">
                 {{ $document->situacao->label() }}
             </flux:badge>
