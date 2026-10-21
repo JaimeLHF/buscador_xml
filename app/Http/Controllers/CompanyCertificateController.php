@@ -27,6 +27,6 @@ class CompanyCertificateController extends Controller
             throw ValidationException::withMessages(['pfx' => $e->getMessage()]);
         }
 
-        return redirect()->route('companies.show', $company)->with('status', 'certificate-saved');
+        return redirect()->route('companies.show', $company)->with('success', __('Certificado salvo e validado.'));
     }
 }

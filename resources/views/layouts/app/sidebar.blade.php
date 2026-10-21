@@ -20,6 +20,18 @@
                     <flux:sidebar.item icon="building-office" :href="route('companies.index')" :current="request()->routeIs('companies.*')" wire:navigate>
                         {{ __('Empresas') }}
                     </flux:sidebar.item>
+                    <flux:sidebar.item icon="document-text" :href="route('documents.index')" :current="request()->routeIs('documents.*')" wire:navigate>
+                        {{ __('Documentos') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="archive-box-arrow-down" :href="route('exports.index')" :current="request()->routeIs('exports.*')" wire:navigate>
+                        {{ __('Exportações') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="signal" :href="route('sefaz-log')" :current="request()->routeIs('sefaz-log')" wire:navigate>
+                        {{ __('Log SEFAZ') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="users" :href="route('organizations.members')" :current="request()->routeIs('organizations.members')" wire:navigate>
+                        {{ __('Membros') }}
+                    </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
