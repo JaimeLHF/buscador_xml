@@ -76,6 +76,29 @@ class Company extends Model
         return $this->hasMany(SyncState::class);
     }
 
+    /** @return HasMany<DfeDocument, $this> */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(DfeDocument::class);
+    }
+
+    /** @return HasMany<DfeEvent, $this> */
+    public function events(): HasMany
+    {
+        return $this->hasMany(DfeEvent::class);
+    }
+
+    /** @return HasMany<SefazRequest, $this> */
+    public function sefazRequests(): HasMany
+    {
+        return $this->hasMany(SefazRequest::class);
+    }
+
+    public function syncState(DocumentoTipo $tipo = DocumentoTipo::Nfe): SyncState
+    {
+        return $this->syncStates()->firstOrCreate(['tipo' => $tipo]);
+    }
+
     public function cnpjValue(): Cnpj
     {
         return Cnpj::from($this->cnpj);

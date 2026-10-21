@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Carbon;
+use Carbon\CarbonImmutable;
 
 /**
  * @property int $id
@@ -16,8 +16,8 @@ use Illuminate\Support\Carbon;
  * @property string $password
  * @property string $titular
  * @property string $cnpj_certificado
- * @property Carbon $valid_from
- * @property Carbon $valid_to
+ * @property CarbonImmutable $valid_from
+ * @property CarbonImmutable $valid_to
  * @property string $fingerprint
  * @property bool $active
  */
