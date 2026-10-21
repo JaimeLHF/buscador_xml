@@ -13,3 +13,7 @@ it('has an openssl binary able to read legacy pfx files', function () {
     expect($process->isSuccessful())->toBeTrue()
         ->and($process->getOutput())->toStartWith('OpenSSL 3');
 });
+
+it('never allows production SEFAZ calls in tests, whatever .env says', function () {
+    expect(config('sefaz.allow_production'))->toBeFalse();
+});
