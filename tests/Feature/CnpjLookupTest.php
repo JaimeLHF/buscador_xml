@@ -84,3 +84,9 @@ it('caches lookups', function () {
 
     Http::assertSentCount(1);
 });
+
+it('sends the CNPJ to the server when the field loses focus', function () {
+    // No Livewire 4, wire:model.blur só atualiza o estado no navegador; sem .live a busca nunca dispara.
+    Livewire::actingAs($this->user)->test('pages::companies.form')
+        ->assertSeeHtml('wire:model.live.blur="cnpj"');
+});

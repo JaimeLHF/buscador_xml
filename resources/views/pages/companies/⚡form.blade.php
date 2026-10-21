@@ -128,7 +128,7 @@ new #[Title('Empresa')] class extends Component {
 
     <form wire:submit="save" class="space-y-6">
         <div class="grid gap-6 sm:grid-cols-2">
-            <flux:input wire:model.blur="cnpj" :label="__('CNPJ')" :description="__('Ao sair do campo, os dados são buscados na Receita.')" required autofocus class="font-mono">
+            <flux:input wire:model.live.blur="cnpj" :label="__('CNPJ')" :description="__('Ao sair do campo, os dados são buscados na Receita.')" required autofocus class="font-mono">
                 <x-slot name="iconTrailing">
                     <flux:icon.loading wire:loading wire:target="cnpj" variant="mini" />
                 </x-slot>
