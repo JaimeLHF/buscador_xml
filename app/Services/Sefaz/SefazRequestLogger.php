@@ -25,6 +25,18 @@ class SefazRequestLogger
         ]);
     }
 
+    public function logEvento(Company $company, float $started, RetEvento $ret, string $chave): SefazRequest
+    {
+        return $company->sefazRequests()->create([
+            'servico' => SefazServico::Manifestacao,
+            'tp_amb' => $company->ambiente->value,
+            'cstat' => $ret->cStat,
+            'xmotivo' => Str::limit($ret->xMotivo, 250),
+            'chave' => $chave,
+            'duracao_ms' => $this->elapsed($started),
+        ]);
+    }
+
     public function logError(Company $company, SefazServico $servico, float $started, string $error, ?string $ultNsuEnviado = null, ?string $chave = null): SefazRequest
     {
         return $company->sefazRequests()->create([

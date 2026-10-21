@@ -2,7 +2,9 @@
 
 namespace Tests\Support;
 
+use App\Enums\TipoEvento;
 use App\Models\Company;
+use App\Services\Sefaz\EventoResponse;
 use App\Services\Sefaz\SefazGateway;
 use RuntimeException;
 use Throwable;
@@ -36,6 +38,13 @@ final class FakeSefazGateway implements SefazGateway
     public function consChave(Company $company, string $chave): string
     {
         return $this->respond('consChave', $chave);
+    }
+
+    public function manifestar(Company $company, string $chave, TipoEvento $tipo, int $nSeqEvento, string $xJust = ''): EventoResponse
+    {
+        $response = $this->respond('manifestar', "{$tipo->value}:{$chave}:{$nSeqEvento}");
+
+        return new EventoResponse(SefazFixtures::envEvento($company->cnpj, $chave, $tipo->value, $nSeqEvento), $response);
     }
 
     private function respond(string $method, string $arg): string

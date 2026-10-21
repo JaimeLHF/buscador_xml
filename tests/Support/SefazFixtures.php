@@ -43,6 +43,30 @@ final class SefazFixtures
         return ['nsu' => $nsu, 'schema' => $schema, 'xml' => self::file($fixture)];
     }
 
+    /** Pedido envEvento como o sped-nfe gera (sem a assinatura, irrelevante para montar o procEventoNFe). */
+    public static function envEvento(string $cnpj, string $chave, string $tpEvento, int $seq = 1): string
+    {
+        $seqPad = str_pad((string) $seq, 2, '0', STR_PAD_LEFT);
+
+        return '<envEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><idLote>202610211200001</idLote>'
+            ."<evento xmlns=\"http://www.portalfiscal.inf.br/nfe\" versao=\"1.00\"><infEvento Id=\"ID{$tpEvento}{$chave}{$seqPad}\"><cOrgao>91</cOrgao><tpAmb>2</tpAmb>"
+            ."<CNPJ>{$cnpj}</CNPJ><chNFe>{$chave}</chNFe><dhEvento>2026-10-21T12:00:00-03:00</dhEvento><tpEvento>{$tpEvento}</tpEvento>"
+            ."<nSeqEvento>{$seq}</nSeqEvento><verEvento>1.00</verEvento><detEvento versao=\"1.00\"><descEvento>Ciencia da Operacao</descEvento></detEvento></infEvento></evento>"
+            .'</envEvento>';
+    }
+
+    public static function retEvento(string $cStat, string $xMotivo, string $chave, string $tpEvento = '210210', int $seq = 1): string
+    {
+        $nProt = in_array($cStat, ['135', '136'], true) ? '<nProt>891260000012345</nProt>' : '';
+
+        return '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body>'
+            .'<nfeRecepcaoEventoNFResult xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4">'
+            .'<retEnvEvento xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00"><idLote>202610211200001</idLote><tpAmb>2</tpAmb><verAplic>AN_1.5.0</verAplic><cOrgao>91</cOrgao><cStat>128</cStat><xMotivo>Lote de evento processado</xMotivo>'
+            ."<retEvento versao=\"1.00\"><infEvento><tpAmb>2</tpAmb><verAplic>AN_1.5.0</verAplic><cOrgao>91</cOrgao><cStat>{$cStat}</cStat><xMotivo>{$xMotivo}</xMotivo>"
+            ."<chNFe>{$chave}</chNFe><tpEvento>{$tpEvento}</tpEvento><xEvento>Ciencia da Operacao</xEvento><nSeqEvento>{$seq}</nSeqEvento><dhRegEvento>2026-10-21T12:00:05-03:00</dhRegEvento>{$nProt}</infEvento></retEvento>"
+            .'</retEnvEvento></nfeRecepcaoEventoNFResult></soap:Body></soap:Envelope>';
+    }
+
     private static function envelope(string $body): string
     {
         return '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body>'
