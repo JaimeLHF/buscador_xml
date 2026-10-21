@@ -4,9 +4,12 @@ use App\Concerns\CompanyValidationRules;
 use App\Enums\Ambiente;
 use App\Enums\Uf;
 use App\Models\Company;
+use App\Services\CnpjLookup\CnpjLookup;
+use App\Support\Cnpj;
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
@@ -22,6 +25,9 @@ new #[Title('Empresa')] class extends Component {
     public int $ambiente = Ambiente::Homologacao->value;
     public bool $ativo = true;
     public bool $manifestacao_automatica = false;
+
+    public ?string $lookupMessage = null;
+    public string $lookupVariant = 'secondary';
 
     public function mount(?Company $company = null): void
     {
@@ -43,6 +49,54 @@ new #[Title('Empresa')] class extends Component {
         }
 
         Gate::authorize('create', Company::class);
+    }
+
+    public function updatedCnpj(CnpjLookup $lookup): void
+    {
+        $this->lookupMessage = null;
+
+        if (! Cnpj::isValid($this->cnpj)) {
+            return;
+        }
+
+        $cnpj = Cnpj::from($this->cnpj);
+        $this->cnpj = $cnpj->formatted();
+
+        if ($this->company?->cnpj === $cnpj->value) {
+            return;
+        }
+
+        $limiterKey = 'cnpj-lookup:'.Auth::id();
+
+        if (RateLimiter::tooManyAttempts($limiterKey, 20)) {
+            $this->setLookupMessage(__('Muitas consultas seguidas. Preencha manualmente ou aguarde um minuto.'), 'warning');
+
+            return;
+        }
+
+        RateLimiter::hit($limiterKey);
+
+        $data = $lookup->find($cnpj);
+
+        if ($data === null) {
+            $this->setLookupMessage(__('CNPJ não encontrado na base pública. Preencha os dados manualmente.'), 'warning');
+
+            return;
+        }
+
+        $this->razao_social = $data->razaoSocial;
+        $this->nome_fantasia = (string) $data->nomeFantasia;
+        $this->uf = Uf::tryFrom((string) $data->uf)?->value ?? $this->uf;
+
+        $data->isActive()
+            ? $this->setLookupMessage(__('Dados preenchidos automaticamente (:source). Confira antes de salvar.', ['source' => $data->source]), 'success')
+            : $this->setLookupMessage(__('Atenção: situação cadastral ":s" na Receita Federal.', ['s' => $data->situacao]), 'danger');
+    }
+
+    private function setLookupMessage(string $message, string $variant): void
+    {
+        $this->lookupMessage = $message;
+        $this->lookupVariant = $variant;
     }
 
     public function save(): void
@@ -74,7 +128,11 @@ new #[Title('Empresa')] class extends Component {
 
     <form wire:submit="save" class="space-y-6">
         <div class="grid gap-6 sm:grid-cols-2">
-            <flux:input wire:model="cnpj" :label="__('CNPJ')" :description="__('Aceita CNPJ numérico ou alfanumérico.')" required autofocus class="font-mono" />
+            <flux:input wire:model.blur="cnpj" :label="__('CNPJ')" :description="__('Ao sair do campo, os dados são buscados na Receita.')" required autofocus class="font-mono">
+                <x-slot name="iconTrailing">
+                    <flux:icon.loading wire:loading wire:target="cnpj" variant="mini" />
+                </x-slot>
+            </flux:input>
 
             <flux:select wire:model="uf" :label="__('UF')" :placeholder="__('Selecione')" required>
                 @foreach (Uf::cases() as $option)
@@ -82,6 +140,10 @@ new #[Title('Empresa')] class extends Component {
                 @endforeach
             </flux:select>
         </div>
+
+        @if ($lookupMessage)
+            <flux:callout :variant="$lookupVariant" icon="information-circle" :heading="$lookupMessage" />
+        @endif
 
         <flux:input wire:model="razao_social" :label="__('Razão social')" required />
         <flux:input wire:model="nome_fantasia" :label="__('Nome fantasia')" />
