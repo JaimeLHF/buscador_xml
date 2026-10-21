@@ -98,6 +98,7 @@ return [
 
     'waits' => [
         'redis:default' => 60,
+        'redis:sefaz' => 300,
     ],
 
     /*
@@ -210,6 +211,19 @@ return [
             'timeout' => 60,
             'nice' => 0,
         ],
+        // Fila própria para chamadas à SEFAZ: jobs longos (várias páginas de NSU) sem travar as demais filas.
+        'supervisor-sefaz' => [
+            'connection' => 'redis',
+            'queue' => ['sefaz'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 620,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
@@ -219,11 +233,17 @@ return [
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
+            'supervisor-sefaz' => [
+                'maxProcesses' => 5,
+            ],
         ],
 
         'local' => [
             'supervisor-1' => [
                 'maxProcesses' => 3,
+            ],
+            'supervisor-sefaz' => [
+                'maxProcesses' => 2,
             ],
         ],
     ],
