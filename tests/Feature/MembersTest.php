@@ -87,3 +87,21 @@ it('forbids members from inviting', function () {
         ->call('invite')
         ->assertForbidden();
 });
+
+it('does not change the role of an existing member who accepts an old invitation', function () {
+    Notification::fake();
+    $member = User::factory()->create(['email' => 'membro@example.com']);
+    $this->organization->addMember($member, OrganizationRole::Member);
+
+    app(InviteMember::class)->handle($this->organization, $this->owner, 'membro@example.com', OrganizationRole::Admin);
+    $token = null;
+    Notification::assertSentOnDemand(OrganizationInvited::class, function ($n) use (&$token) {
+        $token = $n->token;
+
+        return true;
+    });
+
+    $this->actingAs($member)->get(route('invitations.accept', $token));
+
+    expect($member->roleIn($this->organization))->toBe(OrganizationRole::Member);
+});

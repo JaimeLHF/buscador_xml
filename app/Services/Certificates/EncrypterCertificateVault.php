@@ -8,7 +8,7 @@ final readonly class EncrypterCertificateVault implements CertificateVault
 {
     public function __construct(private Encrypter $encrypter) {}
 
-    public function encrypt(string $plain): string
+    public function encrypt(#[\SensitiveParameter] string $plain): string
     {
         return $this->encrypter->encryptString($plain);
     }

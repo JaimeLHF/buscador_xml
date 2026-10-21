@@ -16,7 +16,7 @@ class VaultEncrypted implements CastsAttributes
         return $value === null ? null : app(CertificateVault::class)->decrypt($value);
     }
 
-    public function set(Model $model, string $key, mixed $value, array $attributes): ?string
+    public function set(Model $model, string $key, #[\SensitiveParameter] mixed $value, array $attributes): ?string
     {
         return $value === null ? null : app(CertificateVault::class)->encrypt($value);
     }

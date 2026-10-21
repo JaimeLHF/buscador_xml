@@ -34,6 +34,16 @@ class DocumentProcessor
         $dom->loadXML($doc->xml, LIBXML_NONET);
         $root = $dom->documentElement;
 
+        // chave e tpEvento compõem caminhos de arquivo: só valores no formato oficial são aceitos.
+        $chave = $this->text($root, 'chNFe') ?? substr((string) $this->attribute($root, 'infNFe', 'Id'), 3);
+        $tpEvento = $this->text($root, 'tpEvento');
+
+        if (! preg_match('/^\d{44}$/', trim($chave)) || ($doc->schema->isEvent() && ! preg_match('/^\d{6}$/', trim((string) $tpEvento)))) {
+            Log::warning('docZip com chave ou tpEvento fora do formato', ['company_id' => $company->id, 'nsu' => $doc->nsu, 'schema' => $doc->rawSchema]);
+
+            return;
+        }
+
         match ($doc->schema) {
             DfeSchema::ResNFe => $this->resumo($company, $doc, $root),
             DfeSchema::ProcNFe => $this->completo($company, $doc, $root),

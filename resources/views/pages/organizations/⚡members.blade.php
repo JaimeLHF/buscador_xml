@@ -73,6 +73,7 @@ new #[Title('Membros')] class extends Component {
         abort_if($member->pivot->role === OrganizationRole::Owner || $member->id === Auth::id(), 403);
 
         $this->organization->users()->detach($member->id);
+        $this->organization->invitations()->where('email', strtolower($member->email))->delete();
 
         if ($member->current_organization_id === $this->organization->id) {
             $member->forceFill(['current_organization_id' => null])->save();

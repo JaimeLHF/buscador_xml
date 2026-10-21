@@ -21,7 +21,11 @@ class AcceptInvitationController extends Controller
         }
 
         DB::transaction(function () use ($invitation, $user): void {
-            $invitation->organization->addMember($user, $invitation->role);
+            // Quem já é membro mantém o papel atual: um convite antigo não pode promover nem rebaixar ninguém.
+            if (! $user->belongsToOrganization($invitation->organization)) {
+                $invitation->organization->addMember($user, $invitation->role);
+            }
+
             $invitation->update(['accepted_at' => now()]);
             $user->switchOrganization($invitation->organization);
         });

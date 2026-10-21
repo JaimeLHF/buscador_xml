@@ -27,10 +27,11 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
      */
     protected function gate(): void
     {
+        // Payloads de jobs podem conter dados de clientes: acesso só para operadores listados em HORIZON_ADMINS.
         Gate::define('viewHorizon', function ($user = null) {
-            return in_array(optional($user)->email, [
-                //
-            ]);
+            $admins = array_filter(array_map('trim', explode(',', (string) config('services.horizon.admins'))));
+
+            return $user !== null && in_array(strtolower($user->email), array_map('strtolower', $admins), true);
         });
     }
 }

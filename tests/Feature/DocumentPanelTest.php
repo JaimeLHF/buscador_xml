@@ -84,8 +84,8 @@ it('downloads the original XML and renders the DANFE', function () {
 
 it('refuses DANFE for summaries and files from other organizations', function () {
     $resumo = makeDoc($this->company, []);
-    $this->actingAs($this->user)->from(route('documents.show', $resumo))->get(route('documents.danfe', $resumo))
-        ->assertRedirect()->assertSessionHas('error');
+    $this->actingAs($this->user)->from('https://evil.example.com')->get(route('documents.danfe', $resumo))
+        ->assertRedirect(route('documents.show', $resumo))->assertSessionHas('error');
 
     $stranger = User::factory()->withOrganization()->create();
     $this->actingAs($stranger)->get(route('documents.xml', $this->document))->assertForbidden();
