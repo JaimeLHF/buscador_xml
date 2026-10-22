@@ -8,12 +8,14 @@ use DOMXPath;
 use RuntimeException;
 
 /**
- * Lê um procNFe/NFe (ou resNFe) e devolve os dados organizados para a tela da nota, com códigos traduzidos.
- * Só leitura: o XML guardado nunca é alterado.
+ * Lê um procNFe/NFe (ou resNFe) ou um procCTe/CT-e OS e devolve os dados organizados para a tela do documento,
+ * com códigos traduzidos. Só leitura: o XML guardado nunca é alterado.
  */
 final class NfeReader
 {
-    private const NS = 'http://www.portalfiscal.inf.br/nfe';
+    private const NS_NFE = 'http://www.portalfiscal.inf.br/nfe';
+
+    private const NS_CTE = 'http://www.portalfiscal.inf.br/cte';
 
     private DOMXPath $xp;
 
@@ -30,7 +32,13 @@ final class NfeReader
         }
 
         $this->xp = new DOMXPath($dom);
-        $this->xp->registerNamespace('n', self::NS);
+        // O prefixo "n" aponta para o namespace do documento: NF-e e CT-e usam os mesmos caminhos relativos.
+        $cte = $dom->documentElement?->namespaceURI === self::NS_CTE;
+        $this->xp->registerNamespace('n', $cte ? self::NS_CTE : self::NS_NFE);
+
+        if ($cte) {
+            return $this->cte($dom);
+        }
 
         if ($res = $this->node('//n:resNFe')) {
             return ['tipo' => 'resumo', 'resumo' => $this->resumo($res), 'xml' => $this->pretty($dom)];
@@ -221,6 +229,90 @@ final class NfeReader
             'prazo' => self::code(['0' => 'À vista', '1' => 'A prazo'], $this->text('n:indPag', $p)),
             'valor' => $this->text('n:vPag', $p),
         ], $this->nodes('n:pag/n:detPag', $inf));
+    }
+
+    /** @return array<string, mixed> */
+    private function cte(DOMDocument $dom): array
+    {
+        $inf = $this->node('//n:infCte') ?? throw new RuntimeException('XML não é um CT-e.');
+        $ide = $this->node('n:ide', $inf);
+        $norm = $this->node('n:infCTeNorm', $inf);
+        $carga = $norm ? $this->node('n:infCarga', $norm) : null;
+        $icms = $this->node('n:imp/n:ICMS/*', $inf);
+        $toma = $this->text('n:toma3/n:toma', $ide) ?? $this->text('n:toma4/n:toma', $ide);
+
+        return [
+            'tipo' => 'cte',
+            'ide' => array_filter([
+                'Número' => $this->text('n:nCT', $ide),
+                'Série' => $this->text('n:serie', $ide),
+                'Modelo' => self::code(['57' => '57 – CT-e', '67' => '67 – CT-e OS'], $this->text('n:mod', $ide)),
+                'CFOP' => $this->text('n:CFOP', $ide),
+                'Natureza da operação' => $this->text('n:natOp', $ide),
+                'Tipo do CT-e' => self::code(['0' => 'Normal', '1' => 'Complemento de valores', '2' => 'Anulação', '3' => 'Substituto'], $this->text('n:tpCTe', $ide)),
+                'Tipo de serviço' => self::code(['0' => 'Normal', '1' => 'Subcontratação', '2' => 'Redespacho', '3' => 'Redespacho intermediário', '4' => 'Serviço vinculado a multimodal', '6' => 'Transporte de pessoas', '7' => 'Transporte de valores', '8' => 'Excesso de bagagem'], $this->text('n:tpServ', $ide)),
+                'Modal' => self::code(['01' => 'Rodoviário', '02' => 'Aéreo', '03' => 'Aquaviário', '04' => 'Ferroviário', '05' => 'Dutoviário', '06' => 'Multimodal'], $this->text('n:modal', $ide)),
+                'Emissão' => $this->text('n:dhEmi', $ide),
+                'Origem' => trim(($this->text('n:xMunIni', $ide) ?? '').'/'.($this->text('n:UFIni', $ide) ?? ''), '/') ?: null,
+                'Destino' => trim(($this->text('n:xMunFim', $ide) ?? '').'/'.($this->text('n:UFFim', $ide) ?? ''), '/') ?: null,
+                'Tomador do serviço' => self::code(['0' => 'Remetente', '1' => 'Expedidor', '2' => 'Recebedor', '3' => 'Destinatário', '4' => 'Outros'], $toma),
+                'Forma de emissão' => self::code(['1' => 'Normal', '4' => 'Contingência EPEC', '5' => 'Contingência FS-DA', '7' => 'Contingência SVC-RS', '8' => 'Contingência SVC-SP'], $this->text('n:tpEmis', $ide)),
+                'Ambiente' => self::code(['1' => 'Produção', '2' => 'Homologação'], $this->text('n:tpAmb', $ide)),
+            ]),
+            'partes' => array_filter([
+                'Emitente (transportadora)' => $this->parte($this->node('n:emit', $inf), 'enderEmit'),
+                'Tomador do serviço' => $this->parte($this->node('n:toma4', $ide) ?? $this->node('n:toma', $inf), 'enderToma'),
+                'Remetente' => $this->parte($this->node('n:rem', $inf), 'enderReme'),
+                'Expedidor' => $this->parte($this->node('n:exped', $inf), 'enderExped'),
+                'Recebedor' => $this->parte($this->node('n:receb', $inf), 'enderReceb'),
+                'Destinatário' => $this->parte($this->node('n:dest', $inf), 'enderDest'),
+            ]),
+            'valores' => [
+                'total' => $this->text('n:vPrest/n:vTPrest', $inf),
+                'receber' => $this->text('n:vPrest/n:vRec', $inf),
+                'componentes' => array_map(fn (DOMElement $c) => ['nome' => $this->text('n:xNome', $c), 'valor' => $this->text('n:vComp', $c)], $this->nodes('n:vPrest/n:Comp', $inf)),
+            ],
+            'icms' => $icms ? array_filter([
+                'Situação tributária' => $this->text('n:CST', $icms) ?? ($icms->localName === 'ICMSSN' ? 'Simples Nacional' : null),
+                'Base de cálculo' => $this->text('n:vBC', $icms),
+                'Redução da base (%)' => $this->text('n:pRedBC', $icms),
+                'Alíquota (%)' => $this->text('n:pICMS', $icms),
+                'Valor do ICMS' => $this->text('n:vICMS', $icms),
+                'Crédito presumido' => $this->text('n:vCred', $icms),
+            ]) : [],
+            'tributos' => $this->text('n:imp/n:vTotTrib', $inf),
+            'carga' => $carga ? [
+                'dados' => array_filter([
+                    'Valor da carga' => $this->text('n:vCarga', $carga),
+                    'Produto predominante' => $this->text('n:proPred', $carga),
+                    'Outras características' => $this->text('n:xOutCat', $carga),
+                ]),
+                'quantidades' => array_map(fn (DOMElement $q) => [
+                    'medida' => $this->text('n:tpMed', $q),
+                    'quantidade' => $this->text('n:qCarga', $q),
+                    'unidade' => self::code(['00' => 'm³', '01' => 'kg', '02' => 't', '03' => 'unidade', '04' => 'litros', '05' => 'MMBTU'], $this->text('n:cUnid', $q)),
+                ], $this->nodes('n:infQ', $carga)),
+            ] : null,
+            'nfes' => array_values(array_filter(array_map(fn (DOMElement $n) => $this->text('n:chave', $n), $norm ? $this->nodes('n:infDoc/n:infNFe', $norm) : []))),
+            'outrosDocs' => $norm ? array_map(fn (DOMElement $d) => array_filter([
+                'Tipo' => $d->localName === 'infNF' ? 'Nota fiscal modelo 1/1A' : 'Outro documento',
+                'Número' => $this->text('n:nDoc', $d),
+                'Série' => $this->text('n:serie', $d),
+                'Emissão' => $this->text('n:dEmi', $d),
+                'Valor' => $this->text('n:vNF', $d) ?? $this->text('n:vDocFisc', $d),
+                'Descrição' => $this->text('n:descOutros', $d),
+            ]), [...$this->nodes('n:infDoc/n:infNF', $norm), ...$this->nodes('n:infDoc/n:infOutros', $norm)]) : [],
+            'modal' => array_filter([
+                'RNTRC' => $norm ? $this->text('n:infModal/n:rodo/n:RNTRC', $norm) : null,
+            ]),
+            'observacoes' => array_filter([
+                'Observações' => $this->text('n:compl/n:xObs', $inf),
+                'Informações ao Fisco' => $this->text('n:imp/n:infAdFisco', $inf),
+            ]),
+            'obsCont' => array_map(fn (DOMElement $o) => ['campo' => $o->getAttribute('xCampo'), 'texto' => $this->text('n:xTexto', $o)], $this->nodes('n:compl/n:ObsCont', $inf)),
+            'protocolo' => $this->campos($this->node('//n:protCTe/n:infProt'), ['nProt' => 'Protocolo', 'dhRecbto' => 'Autorizado em', 'cStat' => 'Código', 'xMotivo' => 'Situação', 'digVal' => 'Digest']),
+            'xml' => $this->pretty($dom),
+        ];
     }
 
     /** @return array<string, string> */

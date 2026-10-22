@@ -47,6 +47,15 @@ new #[Title('Nota fiscal')] class extends Component {
         }
     }
 
+    /** NF-e citadas num CT-e que esta empresa também recebeu, para abrir direto do conhecimento. */
+    #[Computed]
+    public function nfesVinculadas(): array
+    {
+        $chaves = $this->nfe['nfes'] ?? [];
+
+        return $chaves ? $this->document->company->documents()->whereIn('chave', $chaves)->pluck('id', 'chave')->all() : [];
+    }
+
     /** @return list<TipoEvento> */
     #[Computed]
     public function manifestacoes(): array
@@ -94,7 +103,8 @@ new #[Title('Nota fiscal')] class extends Component {
 @php
     $nfe = $this->nfe;
     $completo = ($nfe['tipo'] ?? null) === 'completo';
-    $ide = $completo ? $nfe['ide'] : [];
+    $cte = ($nfe['tipo'] ?? null) === 'cte';
+    $ide = $completo || $cte ? $nfe['ide'] : [];
     $moeda = fn (?string $v) => $v === null ? null : Fmt::money($v);
     $formatarParte = fn (?array $p) => $p ? collect($p)->map(fn ($v, $k) => in_array($k, ['CNPJ', 'CPF'], true) ? Fmt::cnpj($v) : $v)->all() : [];
     $abas = array_filter([
@@ -102,6 +112,8 @@ new #[Title('Nota fiscal')] class extends Component {
         'produtos' => $completo ? __('Produtos (:n)', ['n' => count($nfe['itens'])]) : null,
         'impostos' => $completo ? __('Impostos e totais') : null,
         'transporte' => $completo ? __('Transporte e pagamento') : null,
+        'valores' => $cte ? __('Valores e impostos') : null,
+        'carga' => $cte ? __('Carga e documentos (:n)', ['n' => count($nfe['nfes']) + count($nfe['outrosDocs'])]) : null,
         'xml' => $nfe ? __('XML') : null,
     ]);
 @endphp
@@ -113,8 +125,8 @@ new #[Title('Nota fiscal')] class extends Component {
             <flux:link :href="route('documents.index')" wire:navigate class="text-sm">← {{ __('Notas recebidas') }}</flux:link>
             <flux:heading size="xl" level="1">{{ $document->emitente_nome ?? __('NF-e') }}</flux:heading>
             <flux:text>
-                @if ($completo)
-                    {{ __('NF-e nº :n, série :s', ['n' => $ide['Número'] ?? '—', 's' => $ide['Série'] ?? '—']) }} ·
+                @if ($completo || $cte)
+                    {{ __(':doc nº :n, série :s', ['doc' => $document->tipo->label(), 'n' => $ide['Número'] ?? '—', 's' => $ide['Série'] ?? '—']) }} ·
                 @endif
                 {{ __('emitida em :data', ['data' => Fmt::dateTime($document->data_emissao)]) }}
             </flux:text>
@@ -124,7 +136,7 @@ new #[Title('Nota fiscal')] class extends Component {
         <div class="flex flex-wrap items-center gap-2">
             <flux:button size="sm" icon="arrow-down-tray" :href="route('documents.xml', $document)">{{ __('XML') }}</flux:button>
             @if ($document->tem_xml_completo)
-                <flux:button size="sm" icon="document-text" :href="route('documents.danfe', $document)" target="_blank">{{ __('DANFE') }}</flux:button>
+                <flux:button size="sm" icon="document-text" :href="route('documents.danfe', $document)" target="_blank">{{ $cte ? __('DACTE') : __('DANFE') }}</flux:button>
             @endif
             <flux:badge :color="match ($document->situacao) { App\Enums\Situacao::Autorizada => 'green', App\Enums\Situacao::Cancelada => 'red', default => 'amber' }">
                 {{ $document->situacao->label() }}
@@ -134,21 +146,27 @@ new #[Title('Nota fiscal')] class extends Component {
 
     {{-- Faixa de números principais. --}}
     <dl class="grid grid-cols-2 gap-px border border-zinc-200 bg-zinc-200 md:grid-cols-3 xl:grid-cols-6 dark:border-zinc-700 dark:bg-zinc-700">
-        @foreach (array_filter([
+        @foreach (array_filter($cte ? [
+            __('Valor do frete') => Fmt::money($document->valor_total),
+            __('Trajeto') => ($ide['Origem'] ?? '—').' → '.($ide['Destino'] ?? '—'),
+            __('Modal') => $ide['Modal'] ?? null,
+            __('Tomador') => $ide['Tomador do serviço'] ?? null,
+            __('Protocolo') => $nfe['protocolo']['Protocolo'] ?? null,
+        ] : [
             __('Valor total') => Fmt::money($document->valor_total),
             __('Natureza da operação') => $ide['Natureza da operação'] ?? null,
             __('Tipo') => $ide['Tipo'] ?? ($nfe['resumo']['Tipo'] ?? null),
             __('Manifestação') => $document->manifestacao_status?->label() ?? __('Nenhuma'),
             __('Protocolo') => $nfe['protocolo']['Protocolo'] ?? ($nfe['resumo']['Protocolo'] ?? null),
         ]) as $rotulo => $valor)
-            <div @class(['bg-white px-4 py-3 dark:bg-zinc-800', 'col-span-2' => $rotulo === __('Natureza da operação'), 'max-md:col-span-2' => in_array($rotulo, [__('Valor total'), __('Protocolo')], true)])>
+            <div @class(['bg-white px-4 py-3 dark:bg-zinc-800', 'col-span-2' => in_array($rotulo, [__('Natureza da operação'), __('Trajeto')], true), 'max-md:col-span-2' => in_array($rotulo, [__('Valor total'), __('Valor do frete'), __('Protocolo')], true)])>
                 <dt class="text-xs font-medium tracking-wide text-zinc-500 uppercase dark:text-zinc-400">{{ $rotulo }}</dt>
                 <dd class="mt-1 text-sm font-medium tabular-nums text-zinc-900 dark:text-white">{{ $valor }}</dd>
             </div>
         @endforeach
     </dl>
 
-    @unless ($completo)
+    @unless ($completo || $cte)
         <flux:callout icon="information-circle" color="zinc">
             <flux:callout.text>{{ __('A SEFAZ entregou só o resumo desta nota, por isso produtos, impostos e transporte ainda não aparecem. Eles chegam junto com o XML completo, depois da manifestação.') }}</flux:callout.text>
         </flux:callout>
@@ -203,6 +221,30 @@ new #[Title('Nota fiscal')] class extends Component {
                                 <x-secao :titulo="__('Responsável técnico (sistema emissor)')"><x-campos :itens="$formatarParte($nfe['responsavel'])" /></x-secao>
                             @endif
                         </div>
+                    @endif
+                @elseif ($cte)
+                    <div class="grid items-start gap-4 xl:grid-cols-2">
+                        @foreach ($nfe['partes'] as $papel => $parte)
+                            <x-secao :titulo="$papel"><x-campos :itens="$formatarParte($parte)" /></x-secao>
+                        @endforeach
+                    </div>
+                    <x-secao :titulo="__('Identificação do conhecimento')">
+                        <x-campos :colunas="2" :itens="collect($ide)->map(fn ($v, $k) => $k === 'Emissão' ? Fmt::xmlDate($v) : $v)->all()" />
+                    </x-secao>
+                    @if ($nfe['protocolo'])
+                        <x-secao :titulo="__('Autorização')">
+                            <x-campos :colunas="2" :itens="collect($nfe['protocolo'])->map(fn ($v, $k) => $k === 'Autorizado em' ? Fmt::xmlDate($v) : $v)->all()" />
+                        </x-secao>
+                    @endif
+                    @foreach ($nfe['observacoes'] as $rotulo => $texto)
+                        <x-secao :titulo="$rotulo">
+                            <p class="px-3 py-3 text-sm leading-relaxed whitespace-pre-line text-zinc-900 dark:text-zinc-100">{{ $texto }}</p>
+                        </x-secao>
+                    @endforeach
+                    @if ($nfe['obsCont'])
+                        <x-secao :titulo="__('Observações do contribuinte')">
+                            <x-campos :itens="collect($nfe['obsCont'])->mapWithKeys(fn ($o) => [$o['campo'] => $o['texto']])->all()" />
+                        </x-secao>
                     @endif
                 @elseif ($nfe)
                     <x-secao :titulo="__('Resumo da nota')">
@@ -318,6 +360,66 @@ new #[Title('Nota fiscal')] class extends Component {
                 </div>
             @endif
 
+            @if ($cte)
+                {{-- Valores do frete e impostos --}}
+                <div x-show="aba === 'valores'" x-cloak role="tabpanel" class="space-y-4 p-4">
+                    <x-secao :titulo="__('Valores da prestação')">
+                        <x-campos :itens="array_filter([__('Valor total do serviço') => $moeda($nfe['valores']['total']), __('Valor a receber') => $moeda($nfe['valores']['receber'])])" />
+                        @if ($nfe['valores']['componentes'])
+                            <table class="w-full border-t border-zinc-200 text-sm dark:border-zinc-700">
+                                <thead class="bg-zinc-50 text-xs tracking-wide text-zinc-500 uppercase dark:bg-white/[0.03] dark:text-zinc-400">
+                                    <tr><th class="px-3 py-2 text-start font-medium">{{ __('Componente') }}</th><th class="px-3 py-2 text-end font-medium">{{ __('Valor') }}</th></tr>
+                                </thead>
+                                <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                                    @foreach ($nfe['valores']['componentes'] as $comp)
+                                        <tr><td class="px-3 py-2">{{ $comp['nome'] }}</td><td class="px-3 py-2 text-end tabular-nums">{{ Fmt::money($comp['valor']) }}</td></tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        @endif
+                    </x-secao>
+                    @if ($nfe['icms'] || $nfe['tributos'])
+                        <x-secao :titulo="__('Impostos')">
+                            <x-campos :colunas="2" :itens="collect($nfe['icms'])->map(fn ($v, $k) => str_contains($k, '%') || $k === 'Situação tributária' ? ($k === 'Situação tributária' ? $v : Fmt::num($v, 4)) : Fmt::money($v))->put(__('Tributos aproximados'), $moeda($nfe['tributos']))->all()" />
+                        </x-secao>
+                    @endif
+                </div>
+
+                {{-- Carga e documentos transportados --}}
+                <div x-show="aba === 'carga'" x-cloak role="tabpanel" class="space-y-4 p-4">
+                    @if ($nfe['carga'])
+                        <x-secao :titulo="__('Carga')">
+                            <x-campos :itens="collect($nfe['carga']['dados'])->map(fn ($v, $k) => $k === 'Valor da carga' ? Fmt::money($v) : $v)->all()" />
+                            @foreach ($nfe['carga']['quantidades'] as $q)
+                                <x-campos class="border-t border-zinc-200 dark:border-zinc-700" :itens="[$q['medida'] ?? __('Quantidade') => Fmt::num($q['quantidade'], 4).' '.$q['unidade']]" />
+                            @endforeach
+                        </x-secao>
+                    @endif
+                    <x-secao :titulo="__('NF-e transportadas (:n)', ['n' => count($nfe['nfes'])])">
+                        <ul class="divide-y divide-zinc-200 text-sm dark:divide-zinc-700">
+                            @forelse ($nfe['nfes'] as $chave)
+                                <li class="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+                                    <span class="font-mono text-xs break-all">{{ $chave }}</span>
+                                    @if ($vinculada = $this->nfesVinculadas[$chave] ?? null)
+                                        <flux:link :href="route('documents.show', $vinculada)" wire:navigate class="text-sm">{{ __('Abrir nota') }}</flux:link>
+                                    @else
+                                        <flux:text size="sm">{{ __('Não recebida por esta empresa') }}</flux:text>
+                                    @endif
+                                </li>
+                            @empty
+                                <li class="px-3 py-3 text-zinc-500">{{ __('Nenhuma NF-e informada.') }}</li>
+                            @endforelse
+                        </ul>
+                    </x-secao>
+                    @foreach ($nfe['outrosDocs'] as $doc)
+                        <x-secao :titulo="__('Outro documento transportado')"><x-campos :colunas="2" :itens="$doc" /></x-secao>
+                    @endforeach
+                    @if ($nfe['modal'])
+                        <x-secao :titulo="__('Modal')"><x-campos :itens="$nfe['modal']" /></x-secao>
+                    @endif
+                </div>
+            @endif
+
             @if ($nfe)
                 {{-- XML bruto: garante que nenhum campo fica de fora. --}}
                 <div x-show="aba === 'xml'" x-cloak role="tabpanel">
@@ -328,6 +430,7 @@ new #[Title('Nota fiscal')] class extends Component {
 
         {{-- Coluna lateral: manifestação e eventos. --}}
         <div class="space-y-6">
+            @unless ($cte)
             <div class="space-y-3 border border-zinc-200 p-4 dark:border-zinc-700">
                 <flux:heading level="2">{{ __('Manifestação do destinatário') }}</flux:heading>
                 <flux:text size="sm">{{ __('Situação atual: :s', ['s' => $document->manifestacao_status?->label() ?? __('nenhuma')]) }}</flux:text>
@@ -340,6 +443,7 @@ new #[Title('Nota fiscal')] class extends Component {
                     <flux:text size="sm">{{ auth()->user()->can('manifest', $document) ? __('Nenhuma manifestação disponível para este documento.') : __('Somente donos e administradores da organização podem manifestar.') }}</flux:text>
                 @endforelse
             </div>
+            @endunless
 
             <div class="space-y-3 border border-zinc-200 p-4 dark:border-zinc-700">
                 <flux:heading level="2">{{ __('Eventos') }}</flux:heading>
