@@ -3,16 +3,19 @@
 use App\Actions\Companies\StoreCompanyCertificate;
 use App\Enums\DfeSchema;
 use App\Enums\DocumentoTipo;
+use App\Enums\ManifestacaoStatus;
 use App\Enums\SefazServico;
 use App\Enums\Situacao;
 use App\Enums\TipoEvento;
 use App\Jobs\SyncCompanyDfe;
 use App\Models\Company;
+use App\Models\DfeDocument;
 use App\Models\User;
 use App\Services\Sefaz\DistribuicaoService;
 use App\Services\Sefaz\Exceptions\ManifestacaoException;
 use App\Services\Sefaz\ManifestacaoService;
 use App\Services\Sefaz\SyncOutcome;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\Support\SefazFixtures as F;
@@ -79,13 +82,52 @@ it('dispatches one job per due company and document type', function () {
     Queue::assertPushed(SyncCompanyDfe::class, fn ($job) => $job->tipo === DocumentoTipo::Cte && $job->uniqueId() === "{$this->company->id}:cte");
 });
 
-it('never offers recipient manifestation for CT-e', function () {
+function receiveCte(Company $company): DfeDocument
+{
     fakeSefaz()->push(F::ret138('000000000000001', '000000000000001', [F::doc('000000000000001', 'procCTe.xml', 'procCTe_v4.00.xsd')]));
-    $this->service->sync($this->company, DocumentoTipo::Cte);
-    $cte = $this->company->documents()->sole();
+    app(DistribuicaoService::class)->sync($company, DocumentoTipo::Cte);
 
-    expect(app(ManifestacaoService::class)->disponiveis($cte))->toBe([])
+    return $company->documents()->sole();
+}
+
+it('offers only the service disagreement for CT-e, never the NF-e manifestation', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-21 12:00:00', 'America/Sao_Paulo'));
+    $cte = receiveCte($this->company);
+
+    expect(app(ManifestacaoService::class)->disponiveis($cte))->toBe([TipoEvento::PrestacaoDesacordo])
         ->and(fn () => app(ManifestacaoService::class)->manifestar($cte, TipoEvento::ConfirmacaoOperacao))->toThrow(ManifestacaoException::class, 'só existe para NF-e');
+});
+
+it('registers the service disagreement at the CT-e authorizer and stores the procEventoCTe', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-21 12:00:00', 'America/Sao_Paulo'));
+    $cte = receiveCte($this->company);
+    fakeSefaz()->push(F::retEventoCTe('135', 'Evento registrado e vinculado ao CT-e', CHAVE_CTE));
+
+    $event = app(ManifestacaoService::class)->manifestar($cte, TipoEvento::PrestacaoDesacordo, 'Frete cobrado em duplicidade');
+
+    expect(fakeSefaz()->calls[1])->toBe(['method' => 'manifestar', 'arg' => '610110:'.CHAVE_CTE.':1'])
+        ->and($cte->refresh()->manifestacao_status)->toBe(ManifestacaoStatus::Desacordo)
+        ->and($event)
+        ->schema->toBe(DfeSchema::ProcEventoCTe)
+        ->protocolo->toBe('342260000054321')
+        ->and(Storage::disk('local')->get($event->xml_path))->toContain('<procEventoCTe')->toContain('<nProt>342260000054321</nProt>')
+        ->and(app(ManifestacaoService::class)->disponiveis($cte))->toBe([]);
+});
+
+it('blocks the disagreement for non-takers, after 45 days and without a description', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-10-21 12:00:00', 'America/Sao_Paulo'));
+    $cte = receiveCte($this->company);
+    $service = app(ManifestacaoService::class);
+
+    expect(fn () => $service->manifestar($cte, TipoEvento::PrestacaoDesacordo, 'curta'))->toThrow(ManifestacaoException::class);
+
+    $this->company->update(['cnpj' => '44333222000191']); // remetente, não tomador
+    expect(fn () => $service->manifestar($cte->refresh(), TipoEvento::PrestacaoDesacordo, 'Frete cobrado em duplicidade'))->toThrow(ManifestacaoException::class, 'tomador');
+
+    $this->company->update(['cnpj' => '12345678000195']);
+    $this->travel(46)->days();
+    expect(fn () => $service->manifestar($cte->refresh(), TipoEvento::PrestacaoDesacordo, 'Frete cobrado em duplicidade'))->toThrow(ManifestacaoException::class, '45 dias')
+        ->and(fakeSefaz()->calls)->toHaveCount(1);
 });
 
 it('lists CT-e in the inbox and shows the freight details', function () {
@@ -108,5 +150,6 @@ it('lists CT-e in the inbox and shows the freight details', function () {
         ->assertSee('PEDAGIO')
         ->assertSee('42261011222333000181550010000001231123456788')
         ->assertSee('DACTE')
-        ->assertDontSee('Manifestação do destinatário');
+        ->assertDontSee('Manifestação do destinatário')
+        ->assertSee('Desacordo do serviço');
 });

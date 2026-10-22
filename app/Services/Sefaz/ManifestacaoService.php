@@ -10,9 +10,11 @@ use App\Enums\Situacao;
 use App\Enums\TipoEvento;
 use App\Models\DfeDocument;
 use App\Models\DfeEvent;
+use App\Services\Documents\NfeReader;
 use App\Services\Sefaz\Exceptions\ManifestacaoException;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
+use NFePHP\CTe\Complements as CteComplements;
 use NFePHP\NFe\Complements;
 use Throwable;
 
@@ -53,16 +55,21 @@ class ManifestacaoService
             throw ManifestacaoException::rejected($ret->cStat, $ret->xMotivo);
         }
 
+        $cte = $tipo->documentoTipo() === DocumentoTipo::Cte;
+        $schema = $cte ? DfeSchema::ProcEventoCTe : DfeSchema::ProcEventoNFe;
+
         // Duplicidade (573) significa que o evento já existe na SEFAZ: o estado local é atualizado do mesmo jeito.
         $path = $ret->registrado()
-            ? $this->storage->putEvent($company, $document->chave, $tipo->value, $seq, DfeSchema::ProcEventoNFe->value, Complements::toAuthorize($result->request, $result->response))
+            ? $this->storage->putEvent($company, $document->chave, $tipo->value, $seq, $schema->value, $cte
+                ? CteComplements::toAuthorize($result->request, $result->response)
+                : Complements::toAuthorize($result->request, $result->response))
             : null;
 
         $event = $company->events()->updateOrCreate(
             ['chave' => $document->chave, 'tp_evento' => $tipo->value, 'n_seq_evento' => $seq],
             [
                 'dfe_document_id' => $document->id,
-                'schema' => DfeSchema::ProcEventoNFe,
+                'schema' => $schema,
                 'descricao' => $tipo->label(),
                 'autor_cnpj' => $company->cnpj,
                 'data_evento' => $ret->dataRegistro ? CarbonImmutable::parse($ret->dataRegistro)->utc() : now(),
@@ -81,7 +88,7 @@ class ManifestacaoService
     /** @return list<TipoEvento> */
     public function disponiveis(DfeDocument $document): array
     {
-        return array_values(array_filter(TipoEvento::manifestacoes(), fn (TipoEvento $tipo) => $this->motivoBloqueio($document, $tipo) === null));
+        return array_values(array_filter(TipoEvento::manifestacoesDe($document->tipo), fn (TipoEvento $tipo) => $this->motivoBloqueio($document, $tipo) === null));
     }
 
     private function guard(DfeDocument $document, TipoEvento $tipo, string $xJust): void
@@ -101,6 +108,10 @@ class ManifestacaoService
     {
         $status = $document->manifestacao_status;
 
+        if ($tipo === TipoEvento::PrestacaoDesacordo) {
+            return $this->motivoBloqueioDesacordo($document);
+        }
+
         return match (true) {
             ! $tipo->isManifestacao() => 'Evento não é uma manifestação do destinatário.',
             $document->tipo !== DocumentoTipo::Nfe => 'A manifestação do destinatário só existe para NF-e.',
@@ -111,5 +122,30 @@ class ManifestacaoService
             $tipo !== TipoEvento::CienciaOperacao && ! $document->conclusivaNoPrazo() => 'O prazo de 180 dias para a manifestação conclusiva expirou.',
             default => null,
         };
+    }
+
+    private function motivoBloqueioDesacordo(DfeDocument $document): ?string
+    {
+        return match (true) {
+            $document->tipo !== DocumentoTipo::Cte => 'O desacordo do serviço só existe para CT-e.',
+            $document->situacao === Situacao::Cancelada => 'O CT-e está cancelado.',
+            $document->manifestacao_status === ManifestacaoStatus::Desacordo => 'O desacordo deste CT-e já foi registrado.',
+            ! $document->desacordoNoPrazo() => 'O prazo de 45 dias para registrar o desacordo expirou.',
+            ! $this->ehTomador($document) => 'Só o tomador do serviço pode registrar o desacordo, e esta empresa não é a tomadora deste CT-e.',
+            default => null,
+        };
+    }
+
+    private function ehTomador(DfeDocument $document): bool
+    {
+        $xml = $document->xml_path ? $this->storage->get($document->xml_path) : null;
+
+        try {
+            $tomador = $xml ? (new NfeReader($xml))->tomadorCnpj() : null;
+        } catch (\RuntimeException) {
+            $tomador = null;
+        }
+
+        return $tomador !== null && $tomador === $document->company->cnpj;
     }
 }

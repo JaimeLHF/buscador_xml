@@ -10,6 +10,7 @@ enum ManifestacaoStatus: string
     case Confirmada = 'confirmada';
     case Desconhecida = 'desconhecida';
     case NaoRealizada = 'nao_realizada';
+    case Desacordo = 'desacordo';
     case Erro = 'erro';
 
     public static function fromEvento(TipoEvento $tipo): ?self
@@ -19,14 +20,15 @@ enum ManifestacaoStatus: string
             TipoEvento::ConfirmacaoOperacao => self::Confirmada,
             TipoEvento::DesconhecimentoOperacao => self::Desconhecida,
             TipoEvento::OperacaoNaoRealizada => self::NaoRealizada,
+            TipoEvento::PrestacaoDesacordo => self::Desacordo,
             default => null,
         };
     }
 
-    /** Confirmação, Desconhecimento e Operação não Realizada encerram a manifestação. */
+    /** Confirmação, Desconhecimento, Operação não Realizada e o desacordo do CT-e encerram a manifestação. */
     public function isConclusive(): bool
     {
-        return in_array($this, [self::Confirmada, self::Desconhecida, self::NaoRealizada], true);
+        return in_array($this, [self::Confirmada, self::Desconhecida, self::NaoRealizada, self::Desacordo], true);
     }
 
     public function label(): string
@@ -38,6 +40,7 @@ enum ManifestacaoStatus: string
             self::Confirmada => 'Operação confirmada',
             self::Desconhecida => 'Operação desconhecida',
             self::NaoRealizada => 'Operação não realizada',
+            self::Desacordo => 'Serviço em desacordo',
             self::Erro => 'Erro na manifestação',
         };
     }

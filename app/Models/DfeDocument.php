@@ -74,6 +74,12 @@ class DfeDocument extends Model
             && $this->data_emissao->greaterThan(now()->subDays(config('sefaz.confirmacao_prazo_dias'))->addHour());
     }
 
+    public function desacordoNoPrazo(): bool
+    {
+        return $this->data_emissao !== null
+            && $this->data_emissao->greaterThan(now()->subDays(config('sefaz.desacordo_prazo_dias'))->addHour());
+    }
+
     /**
      * Resumos que ainda podem receber a Confirmação da Operação em lote: não cancelados, sem manifestação
      * conclusiva ou pendente e dentro do prazo de 180 dias.

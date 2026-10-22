@@ -29,6 +29,9 @@ return [
     // Confirmação, Desconhecimento e Operação não Realizada: até 180 dias da autorização.
     'confirmacao_prazo_dias' => (int) env('SEFAZ_CONFIRMACAO_PRAZO_DIAS', 180),
 
+    // Prestação do serviço em desacordo (CT-e, 610110): só o tomador, até 45 dias da autorização.
+    'desacordo_prazo_dias' => (int) env('SEFAZ_DESACORDO_PRAZO_DIAS', 45),
+
     // Alerta por e-mail/painel quando a empresa acumula esta quantidade de 656 seguidos.
     'blocked_alert_after' => (int) env('SEFAZ_BLOCKED_ALERT_AFTER', 3),
 

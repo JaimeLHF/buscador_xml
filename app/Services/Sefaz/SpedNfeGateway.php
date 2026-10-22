@@ -5,8 +5,10 @@ namespace App\Services\Sefaz;
 use App\Enums\Ambiente;
 use App\Enums\DocumentoTipo;
 use App\Enums\TipoEvento;
+use App\Enums\Uf;
 use App\Models\Company;
 use App\Services\Sefaz\Exceptions\SefazException;
+use InvalidArgumentException;
 use NFePHP\Common\Certificate;
 use NFePHP\Common\Soap\SoapCurl;
 use NFePHP\CTe\Tools as CteTools;
@@ -34,6 +36,15 @@ class SpedNfeGateway implements SefazGateway
 
     public function manifestar(Company $company, string $chave, TipoEvento $tipo, int $nSeqEvento, string $xJust = ''): EventoResponse
     {
+        if ($tipo->documentoTipo() === DocumentoTipo::Cte) {
+            // O desacordo vai para a SEFAZ que autorizou o CT-e: a UF vem dos dois primeiros dígitos da chave.
+            $uf = Uf::fromIbge((int) substr($chave, 0, 2)) ?? throw new InvalidArgumentException('Chave com UF inválida.');
+            $tools = $this->cteTools($company);
+            $response = $tools->sefazManifesta($chave, (int) $tipo->value, $xJust, $nSeqEvento, $uf->value);
+
+            return new EventoResponse($tools->lastRequest, $response);
+        }
+
         $tools = $this->tools($company);
         $response = $tools->sefazManifesta($chave, (int) $tipo->value, $xJust, $nSeqEvento);
 
