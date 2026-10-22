@@ -41,7 +41,7 @@ class DocumentProcessor
         }
 
         // chave e tpEvento compõem caminhos de arquivo: só valores no formato oficial são aceitos.
-        $chave = $this->text($root, 'chNFe') ?? substr((string) $this->attribute($root, 'infNFe', 'Id'), 3);
+        $chave = $this->chave($root);
         $tpEvento = $this->text($root, 'tpEvento');
 
         if (! preg_match('/^\d{44}$/', trim($chave)) || ($doc->schema->isEvent() && ! preg_match('/^\d{6}$/', trim((string) $tpEvento)))) {
@@ -53,7 +53,8 @@ class DocumentProcessor
         match ($doc->schema) {
             DfeSchema::ResNFe => $this->resumo($company, $doc, $root),
             DfeSchema::ProcNFe => $this->completo($company, $doc, $root),
-            DfeSchema::ResEvento, DfeSchema::ProcEventoNFe => $this->evento($company, $doc, $root),
+            DfeSchema::ProcCTe, DfeSchema::ProcCTeOS => $this->completoCte($company, $doc, $root),
+            DfeSchema::ResEvento, DfeSchema::ProcEventoNFe, DfeSchema::ProcEventoCTe => $this->evento($company, $doc, $root),
         };
     }
 
@@ -141,13 +142,40 @@ class DocumentProcessor
         $this->linkOrphanEvents($company, $document);
     }
 
+    /** CT-e e CT-e OS chegam sempre completos (não há resumo nem manifestação para liberar o XML). */
+    private function completoCte(Company $company, DocZip $doc, DOMElement $root): void
+    {
+        $chave = $this->chave($root);
+        $emit = $root->getElementsByTagName('emit')->item(0);
+        $ide = $root->getElementsByTagName('ide')->item(0);
+        $prest = $root->getElementsByTagName('vPrest')->item(0);
+        $protocolo = $root->getElementsByTagName('infProt')->item(0);
+
+        $document = $company->documents()->firstOrNew(['chave' => $chave]);
+
+        $document->fill([
+            'tipo' => DocumentoTipo::Cte,
+            'nsu' => $doc->nsu,
+            'schema' => $doc->schema,
+            'emitente_cnpj' => $emit ? ($this->text($emit, 'CNPJ') ?? $this->text($emit, 'CPF')) : null,
+            'emitente_nome' => $emit ? $this->text($emit, 'xNome') : null,
+            'data_emissao' => $ide ? $this->date($this->text($ide, 'dhEmi')) : null,
+            'valor_total' => $prest ? $this->text($prest, 'vTPrest') : null,
+            'situacao' => $this->situacao($company, $chave, Situacao::fromProtocolo($protocolo ? (string) $this->text($protocolo, 'cStat') : '100')),
+            'tem_xml_completo' => true,
+            'xml_path' => $this->storage->putDocument($company, DocumentoTipo::Cte->value, $chave, $doc->schema->value, $doc->xml),
+        ])->save();
+
+        $this->linkOrphanEvents($company, $document);
+    }
+
     private function evento(Company $company, DocZip $doc, DOMElement $root): void
     {
-        // No procEventoNFe os dados estão em evento/infEvento; o retorno (cStat/nProt) em retEvento/infEvento.
-        $info = $root->getElementsByTagName('evento')->item(0)?->getElementsByTagName('infEvento')->item(0) ?? $root;
-        $retorno = $root->getElementsByTagName('retEvento')->item(0)?->getElementsByTagName('infEvento')->item(0);
+        // No procEventoNFe/procEventoCTe os dados estão em evento/infEvento; o retorno (cStat/nProt) em retEvento/infEvento.
+        $info = ($root->getElementsByTagName('evento')->item(0) ?? $root->getElementsByTagName('eventoCTe')->item(0))?->getElementsByTagName('infEvento')->item(0) ?? $root;
+        $retorno = ($root->getElementsByTagName('retEvento')->item(0) ?? $root->getElementsByTagName('retEventoCTe')->item(0))?->getElementsByTagName('infEvento')->item(0);
 
-        $chave = (string) $this->text($info, 'chNFe');
+        $chave = (string) ($this->text($info, 'chNFe') ?? $this->text($info, 'chCTe'));
         $tpEvento = (string) $this->text($info, 'tpEvento');
         $seq = (int) ($this->text($info, 'nSeqEvento') ?? 1);
         $cstat = $retorno ? $this->text($retorno, 'cStat') : null;
@@ -204,6 +232,17 @@ class DocumentProcessor
     private function linkOrphanEvents(Company $company, DfeDocument $document): void
     {
         $company->events()->where('chave', $document->chave)->whereNull('dfe_document_id')->update(['dfe_document_id' => $document->id]);
+    }
+
+    /**
+     * Chave de acesso de NF-e ou CT-e. O Id do infNFe/infCte vem primeiro: um CT-e pode citar chaves de outros
+     * documentos (chCTe de documentos anteriores) antes do próprio protocolo.
+     */
+    private function chave(DOMElement $root): string
+    {
+        $id = $this->attribute($root, 'infNFe', 'Id') ?: $this->attribute($root, 'infCte', 'Id');
+
+        return trim((string) ($id ? substr($id, 3) : ($this->text($root, 'chNFe') ?? $this->text($root, 'chCTe'))));
     }
 
     private function text(DOMElement $parent, string $tag): ?string

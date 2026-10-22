@@ -24,8 +24,8 @@ it('creates a company with alphanumeric CNPJ and an NF-e sync state', function (
 
     expect($company->cnpj)->toBe('12ABC34501DE35')
         ->and($company->organization_id)->toBe($this->organization->id)
-        ->and($company->syncStates()->sole()->tipo)->toBe(DocumentoTipo::Nfe)
-        ->and($company->syncStates()->sole()->ult_nsu)->toBe('000000000000000');
+        ->and($company->syncStates()->pluck('tipo')->all())->toEqualCanonicalizing([DocumentoTipo::Nfe, DocumentoTipo::Cte])
+        ->and($company->syncStates()->pluck('ult_nsu')->unique()->all())->toBe(['000000000000000']);
 });
 
 it('rejects invalid and duplicated CNPJs', function () {

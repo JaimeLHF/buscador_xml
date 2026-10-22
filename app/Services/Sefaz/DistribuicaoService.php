@@ -4,7 +4,6 @@ namespace App\Services\Sefaz;
 
 use App\Enums\CStat;
 use App\Enums\DocumentoTipo;
-use App\Enums\SefazServico;
 use App\Models\Company;
 use App\Models\SyncState;
 use App\Notifications\CompanyBlocked;
@@ -34,31 +33,32 @@ class DistribuicaoService
         private CnpjCooldown $cooldown,
     ) {}
 
-    public function sync(Company $company): SyncOutcome
+    public function sync(Company $company, DocumentoTipo $tipo = DocumentoTipo::Nfe): SyncOutcome
     {
-        // Um único processo por CNPJ/ambiente por vez (o limite da SEFAZ é por CNPJ, não por cadastro).
-        $lock = Cache::lock("sefaz-dist:{$company->ambiente->value}:{$company->cnpj}", 660);
+        // Um único processo por CNPJ/ambiente/serviço por vez (o limite da SEFAZ é por CNPJ, não por cadastro).
+        $sufixo = $tipo === DocumentoTipo::Nfe ? '' : ":{$tipo->value}";
+        $lock = Cache::lock("sefaz-dist:{$company->ambiente->value}:{$company->cnpj}{$sufixo}", 660);
 
         if (! $lock->get()) {
             return SyncOutcome::Locked;
         }
 
         try {
-            return $this->run($company);
+            return $this->run($company, $tipo);
         } finally {
             $lock->release();
         }
     }
 
-    private function run(Company $company): SyncOutcome
+    private function run(Company $company, DocumentoTipo $tipo): SyncOutcome
     {
-        $state = $company->syncState(DocumentoTipo::Nfe);
+        $state = $company->syncState($tipo);
 
         if ($state->next_check_at?->isFuture()) {
             return SyncOutcome::NotDue;
         }
 
-        if ($until = $this->cooldown->until($company)) {
+        if ($until = $this->cooldown->until($company, $tipo)) {
             $state->update(['next_check_at' => $until]);
 
             return SyncOutcome::NotDue;
@@ -84,12 +84,12 @@ class DistribuicaoService
         $started = microtime(true);
 
         try {
-            $ret = $this->parser->parse($this->gateway->distNsu($company, $sent));
+            $ret = $this->parser->parse($this->gateway->distNsu($company, $sent, $state->tipo));
         } catch (Throwable $e) {
             return $this->failed($company, $state, $sent, $e, $started);
         }
 
-        $this->logger->log($company, SefazServico::DistNsu, $started, $ret, ultNsuEnviado: $sent);
+        $this->logger->log($company, $state->tipo->servicoDistribuicao(), $started, $ret, ultNsuEnviado: $sent);
 
         $state->fill([
             'consecutive_failures' => 0,
@@ -110,7 +110,7 @@ class DistribuicaoService
                 $state->consecutive_656 = 0;
 
                 if (! $ret->hasMore()) {
-                    $state->next_check_at = $this->waitOneHour($company);
+                    $state->next_check_at = $this->waitOneHour($company, $state->tipo);
                 }
 
                 $state->save();
@@ -120,11 +120,11 @@ class DistribuicaoService
         }
 
         $this->advance($state, $ret);
-        $state->next_check_at = $this->waitOneHour($company, $ret->is(CStat::ConsumoIndevido) ? 'wait_after_656_minutes' : 'wait_after_no_docs_minutes');
+        $state->next_check_at = $this->waitOneHour($company, $state->tipo, $ret->is(CStat::ConsumoIndevido) ? 'wait_after_656_minutes' : 'wait_after_no_docs_minutes');
 
         if ($ret->is(CStat::ConsumoIndevido)) {
             $state->consecutive_656++;
-            Log::warning('SEFAZ consumo indevido (656)', ['company_id' => $company->id, 'consecutivos' => $state->consecutive_656]);
+            Log::warning('SEFAZ consumo indevido (656)', ['company_id' => $company->id, 'tipo' => $state->tipo->value, 'consecutivos' => $state->consecutive_656]);
 
             if ($state->consecutive_656 === config('sefaz.blocked_alert_after')) {
                 Notification::send($company->organization->managers(), new CompanyBlocked($company, $state->consecutive_656));
@@ -156,10 +156,10 @@ class DistribuicaoService
         }
     }
 
-    private function waitOneHour(Company $company, string $configKey = 'wait_after_no_docs_minutes'): CarbonImmutable
+    private function waitOneHour(Company $company, DocumentoTipo $tipo, string $configKey = 'wait_after_no_docs_minutes'): CarbonImmutable
     {
         $until = now()->addMinutes(config("sefaz.{$configKey}"));
-        $this->cooldown->set($company, $until);
+        $this->cooldown->set($company, $until, $tipo);
 
         return $until;
     }
@@ -168,15 +168,15 @@ class DistribuicaoService
     {
         $message = FailureClassifier::safeMessage($e);
 
-        $this->logger->logError($company, SefazServico::DistNsu, $started, $message, ultNsuEnviado: $sent);
-        Log::error('Falha na distribuição DF-e', ['company_id' => $company->id, 'exception' => $e::class, 'code' => $e->getCode(), 'message' => $message]);
+        $this->logger->logError($company, $state->tipo->servicoDistribuicao(), $started, $message, ultNsuEnviado: $sent);
+        Log::error('Falha na distribuição DF-e', ['company_id' => $company->id, 'tipo' => $state->tipo->value, 'exception' => $e::class, 'code' => $e->getCode(), 'message' => $message]);
 
         $failures = $state->consecutive_failures + 1;
 
         // Backoff exponencial só quando a requisição certamente não chegou à SEFAZ; nos demais casos, a espera da NT.
         $next = FailureClassifier::isRetryableSoon($e)
             ? now()->addMinutes(min(config('sefaz.retry_base_minutes') * 2 ** ($failures - 1), config('sefaz.retry_max_minutes')))
-            : $this->waitOneHour($company);
+            : $this->waitOneHour($company, $state->tipo);
 
         $state->update([
             'last_checked_at' => now(),

@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Enums\DocumentoTipo;
 use App\Models\Company;
 use App\Services\Sefaz\DistribuicaoService;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -19,19 +20,19 @@ class SyncCompanyDfe implements ShouldBeUnique, ShouldQueue
 
     public int $uniqueFor = 900;
 
-    public function __construct(public Company $company)
+    public function __construct(public Company $company, public DocumentoTipo $tipo = DocumentoTipo::Nfe)
     {
         $this->onQueue(config('sefaz.queue'));
     }
 
-    /** Evita empilhar jobs da mesma empresa; o lock por CNPJ fica no DistribuicaoService. */
+    /** Evita empilhar jobs da mesma empresa e tipo; o lock por CNPJ fica no DistribuicaoService. */
     public function uniqueId(): string
     {
-        return (string) $this->company->id;
+        return $this->tipo === DocumentoTipo::Nfe ? (string) $this->company->id : "{$this->company->id}:{$this->tipo->value}";
     }
 
     public function handle(DistribuicaoService $service): void
     {
-        $service->sync($this->company);
+        $service->sync($this->company, $this->tipo);
     }
 }

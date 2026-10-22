@@ -2,9 +2,8 @@
 
 namespace App\Console\Commands;
 
-use App\Enums\DocumentoTipo;
 use App\Jobs\SyncCompanyDfe;
-use App\Models\Company;
+use App\Models\SyncState;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -18,19 +17,20 @@ class DispatchDueSyncs extends Command
     {
         $count = 0;
 
-        Company::query()
-            ->where('ativo', true)
-            ->when(! config('sefaz.allow_production'), fn (Builder $q) => $q->where('ambiente', 2))
-            ->whereHas('certificates', fn (Builder $q) => $q->where('active', true)->where('valid_to', '>', now()))
-            ->whereHas('syncStates', fn (Builder $q) => $q
-                ->where('tipo', DocumentoTipo::Nfe)
-                ->where(fn (Builder $q) => $q->whereNull('next_check_at')->orWhere('next_check_at', '<=', now())))
-            ->each(function (Company $company) use (&$count): void {
-                SyncCompanyDfe::dispatch($company);
+        // Uma fila por empresa e tipo (NF-e e CT-e são serviços diferentes na SEFAZ, com limites próprios).
+        SyncState::query()
+            ->where(fn (Builder $q) => $q->whereNull('next_check_at')->orWhere('next_check_at', '<=', now()))
+            ->whereHas('company', fn (Builder $q) => $q
+                ->where('ativo', true)
+                ->when(! config('sefaz.allow_production'), fn (Builder $q) => $q->where('ambiente', 2))
+                ->whereHas('certificates', fn (Builder $q) => $q->where('active', true)->where('valid_to', '>', now())))
+            ->with('company')
+            ->each(function (SyncState $state) use (&$count): void {
+                SyncCompanyDfe::dispatch($state->company, $state->tipo);
                 $count++;
             });
 
-        $this->components->info("{$count} empresa(s) enfileirada(s).");
+        $this->components->info("{$count} sincronização(ões) enfileirada(s).");
 
         return self::SUCCESS;
     }

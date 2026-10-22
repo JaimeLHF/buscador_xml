@@ -2,6 +2,7 @@
 
 namespace Tests\Support;
 
+use App\Enums\DocumentoTipo;
 use App\Enums\TipoEvento;
 use App\Models\Company;
 use App\Services\Sefaz\EventoResponse;
@@ -25,9 +26,9 @@ final class FakeSefazGateway implements SefazGateway
         return $this;
     }
 
-    public function distNsu(Company $company, string $ultNsu): string
+    public function distNsu(Company $company, string $ultNsu, DocumentoTipo $tipo = DocumentoTipo::Nfe): string
     {
-        return $this->respond('distNsu', $ultNsu);
+        return $this->respond($tipo === DocumentoTipo::Cte ? 'distNsuCte' : 'distNsu', $ultNsu);
     }
 
     public function consNsu(Company $company, string $nsu): string

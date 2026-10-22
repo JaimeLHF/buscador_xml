@@ -2,6 +2,7 @@
 
 namespace App\Services\Sefaz;
 
+use App\Enums\DocumentoTipo;
 use App\Models\Company;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -12,24 +13,27 @@ use Illuminate\Support\Facades\Cache;
  */
 class CnpjCooldown
 {
-    public function until(Company $company): ?CarbonImmutable
+    public function until(Company $company, DocumentoTipo $tipo = DocumentoTipo::Nfe): ?CarbonImmutable
     {
-        $timestamp = Cache::get($this->key($company));
+        $timestamp = Cache::get($this->key($company, $tipo));
 
         return $timestamp && $timestamp > now()->getTimestamp() ? CarbonImmutable::createFromTimestamp($timestamp) : null;
     }
 
-    public function set(Company $company, CarbonImmutable $until): void
+    public function set(Company $company, CarbonImmutable $until, DocumentoTipo $tipo = DocumentoTipo::Nfe): void
     {
-        $current = $this->until($company);
+        $current = $this->until($company, $tipo);
 
         if ($current === null || $until->greaterThan($current)) {
-            Cache::put($this->key($company), $until->getTimestamp(), $until);
+            Cache::put($this->key($company, $tipo), $until->getTimestamp(), $until);
         }
     }
 
-    private function key(Company $company): string
+    /** NF-e e CT-e são serviços distintos na SEFAZ, cada um com seu controle de consumo indevido. */
+    private function key(Company $company, DocumentoTipo $tipo): string
     {
-        return "sefaz:cooldown:{$company->ambiente->value}:{$company->cnpj}";
+        $sufixo = $tipo === DocumentoTipo::Nfe ? '' : ":{$tipo->value}";
+
+        return "sefaz:cooldown:{$company->ambiente->value}:{$company->cnpj}{$sufixo}";
     }
 }

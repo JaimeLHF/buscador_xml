@@ -8,6 +8,7 @@ enum SefazServico: string
     case ConsNsu = 'cons_nsu';
     case ConsChave = 'cons_chave';
     case Manifestacao = 'manifestacao';
+    case DistNsuCte = 'dist_nsu_cte';
 
     public function label(): string
     {
@@ -16,6 +17,7 @@ enum SefazServico: string
             self::ConsNsu => 'Consulta por NSU',
             self::ConsChave => 'Consulta por chave',
             self::Manifestacao => 'Manifestação',
+            self::DistNsuCte => 'Distribuição CT-e (NSU)',
         };
     }
 

@@ -20,8 +20,10 @@ class SyncNowController extends Controller
 
         $state = $company->syncState(DocumentoTipo::Nfe);
         $until = collect([$state->next_check_at, $cooldown->until($company)])->filter(fn (?CarbonImmutable $d): bool => (bool) $d?->isFuture())->max();
+        $cte = $company->syncState(DocumentoTipo::Cte);
+        $cteLiberado = ! collect([$cte->next_check_at, $cooldown->until($company, DocumentoTipo::Cte)])->contains(fn (?CarbonImmutable $d): bool => (bool) $d?->isFuture());
 
-        if ($until) {
+        if ($until && ! $cteLiberado) {
             return back()->with('error', __('A SEFAZ só permite nova consulta deste CNPJ a partir de :hora.', ['hora' => Fmt::dateTime($until)]));
         }
 
@@ -29,7 +31,14 @@ class SyncNowController extends Controller
             return back()->with('error', __('Envie um certificado válido antes de sincronizar.'));
         }
 
-        SyncCompanyDfe::dispatch($company);
+        // Cada tipo só é enfileirado se a SEFAZ já liberou a próxima consulta dele.
+        if (! $until) {
+            SyncCompanyDfe::dispatch($company);
+        }
+
+        if ($cteLiberado) {
+            SyncCompanyDfe::dispatch($company, DocumentoTipo::Cte);
+        }
 
         return back()->with('success', __('Sincronização enfileirada. Os documentos aparecem em instantes.'));
     }

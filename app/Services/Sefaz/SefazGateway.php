@@ -2,13 +2,15 @@
 
 namespace App\Services\Sefaz;
 
+use App\Enums\DocumentoTipo;
 use App\Enums\TipoEvento;
 use App\Models\Company;
 
 /** Fronteira com a SEFAZ. Retorna o XML bruto da resposta; os testes substituem esta interface. */
 interface SefazGateway
 {
-    public function distNsu(Company $company, string $ultNsu): string;
+    /** Distribuição por NSU: NFeDistribuicaoDFe ou CTeDistribuicaoDFe, conforme o tipo. */
+    public function distNsu(Company $company, string $ultNsu, DocumentoTipo $tipo = DocumentoTipo::Nfe): string;
 
     public function consNsu(Company $company, string $nsu): string;
 
