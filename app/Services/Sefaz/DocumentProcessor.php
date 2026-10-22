@@ -8,6 +8,7 @@ use App\Enums\ManifestacaoStatus;
 use App\Enums\Situacao;
 use App\Enums\TipoEvento;
 use App\Jobs\SendCienciaOperacao;
+use App\Jobs\SendWebhook;
 use App\Models\Company;
 use App\Models\DfeDocument;
 use App\Models\DfeEvent;
@@ -85,6 +86,7 @@ class DocumentProcessor
         ])->save();
 
         $this->linkOrphanEvents($company, $document);
+        $this->notify($company, $document);
         $this->requestCiencia($company, $document);
     }
 
@@ -140,6 +142,7 @@ class DocumentProcessor
         ])->save();
 
         $this->linkOrphanEvents($company, $document);
+        $this->notify($company, $document);
     }
 
     /** CT-e e CT-e OS chegam sempre completos (não há resumo nem manifestação para liberar o XML). */
@@ -167,6 +170,7 @@ class DocumentProcessor
         ])->save();
 
         $this->linkOrphanEvents($company, $document);
+        $this->notify($company, $document);
     }
 
     private function evento(Company $company, DocZip $doc, DOMElement $root): void
@@ -208,10 +212,29 @@ class DocumentProcessor
 
         if ($document && $this->isValidCancellation($event)) {
             $document->update(['situacao' => Situacao::Cancelada]);
+            $this->notify($company, $document);
         }
 
         if ($document && $proprio && ! $document->manifestacao_status?->isConclusive()) {
             $document->update(['manifestacao_status' => ManifestacaoStatus::fromEvento($tipo)]);
+        }
+    }
+
+    /**
+     * Avisa o ERP (webhook) quando a nota chega, ganha o XML completo ou é cancelada. Só depois do commit da página,
+     * para o ERP nunca buscar uma nota que acabou não sendo gravada.
+     */
+    private function notify(Company $company, DfeDocument $document): void
+    {
+        $evento = match (true) {
+            $document->wasChanged('situacao') && $document->situacao === Situacao::Cancelada => 'documento.cancelado',
+            $document->wasRecentlyCreated => 'documento.recebido',
+            $document->wasChanged('tem_xml_completo') && $document->tem_xml_completo => 'documento.xml_completo',
+            default => null,
+        };
+
+        if ($evento !== null && $company->organization->webhook_url) {
+            SendWebhook::dispatch($company->organization, $document, $evento)->afterCommit();
         }
     }
 

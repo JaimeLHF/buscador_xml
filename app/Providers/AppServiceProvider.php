@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\ApiToken;
 use App\Services\Certificates\CertificateVault;
 use App\Services\Certificates\EncrypterCertificateVault;
 use App\Services\CnpjLookup\BrasilApiProvider;
@@ -10,9 +11,12 @@ use App\Services\CnpjLookup\CnpjLookup;
 use App\Services\Sefaz\SefazGateway;
 use App\Services\Sefaz\SpedNfeGateway;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Encryption\Encrypter;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -53,6 +57,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        // API de integração: limite por token, para um ERP mal configurado não derrubar o painel.
+        RateLimiter::for('api', function (Request $request): Limit {
+            $token = $request->attributes->get('api_token');
+
+            return Limit::perMinute(120)->by($token instanceof ApiToken ? "api:{$token->id}" : "api-ip:{$request->ip()}");
+        });
     }
 
     /**

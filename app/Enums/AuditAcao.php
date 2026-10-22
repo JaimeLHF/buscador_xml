@@ -11,6 +11,9 @@ enum AuditAcao: string
     case ExportacaoPedida = 'exportacao_pedida';
     case ExportacaoBaixada = 'exportacao_baixada';
     case CertificadoEnviado = 'certificado_enviado';
+    case TokenCriado = 'token_criado';
+    case TokenRevogado = 'token_revogado';
+    case WebhookAlterado = 'webhook_alterado';
 
     public function label(): string
     {
@@ -22,6 +25,9 @@ enum AuditAcao: string
             self::ExportacaoPedida => 'Pediu um download',
             self::ExportacaoBaixada => 'Baixou um download',
             self::CertificadoEnviado => 'Enviou certificado',
+            self::TokenCriado => 'Criou chave de API',
+            self::TokenRevogado => 'Revogou chave de API',
+            self::WebhookAlterado => 'Alterou o webhook',
         };
     }
 }
