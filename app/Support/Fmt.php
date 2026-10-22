@@ -37,6 +37,34 @@ final class Fmt
         };
     }
 
+    /** Data/hora do XML (ISO 8601, com ou sem fuso) no formato brasileiro; devolve o texto original se não for data. */
+    public static function xmlDate(?string $value, bool $hora = true): string
+    {
+        if ($value === null || $value === '') {
+            return '—';
+        }
+
+        try {
+            return CarbonImmutable::parse($value, self::TIMEZONE)->timezone(self::TIMEZONE)->format($hora && strlen($value) > 10 ? 'd/m/Y H:i' : 'd/m/Y');
+        } catch (\Throwable) {
+            return $value;
+        }
+    }
+
+    /** Número do XML com separadores brasileiros, sem zeros sobrando à direita (até $max casas). */
+    public static function num(?string $value, int $max = 4, int $min = 0): string
+    {
+        if ($value === null || ! is_numeric($value)) {
+            return (string) $value;
+        }
+
+        $txt = number_format((float) $value, $max, ',', '.');
+        $txt = rtrim(rtrim($txt, '0'), ',');
+        [$int, $dec] = array_pad(explode(',', $txt), 2, '');
+
+        return $int.(strlen($dec) < $min ? ','.str_pad($dec, $min, '0') : ($dec !== '' ? ','.$dec : ''));
+    }
+
     public static function money(string|float|null $value): string
     {
         return $value === null ? '—' : 'R$ '.number_format((float) $value, 2, ',', '.');

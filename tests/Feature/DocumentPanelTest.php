@@ -157,3 +157,14 @@ it('splits the inbox into tabs and searches supplier or access key in one field'
     $page->set('aba', 'canceladas')->assertSee('CANCELADA SA')->assertDontSee('SÓ RESUMO LTDA');
     $page->set('aba', '')->set('q', substr($this->document->chave, 0, 20))->assertSee(route('documents.show', $this->document), false)->assertDontSee('CANCELADA SA');
 });
+
+it('shows the full XML content on the document page', function () {
+    Livewire::actingAs($this->user)->test('pages::documents.show', ['document' => $this->document])
+        ->assertSee('NF-e nº 123, série 1')
+        ->assertSee('VENDA DE MERCADORIA')
+        ->assertSee('PRODUTO TESTE')
+        ->assertSee('84719012')
+        ->assertSee('Total da nota')
+        ->assertSee('CEP 88000-000')
+        ->assertSee('&lt;infNFe', false);
+});
