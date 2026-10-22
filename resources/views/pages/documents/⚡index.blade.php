@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\AuditAcao;
 use App\Enums\ExportFormato;
 use App\Enums\ExportStatus;
 use App\Enums\ManifestacaoStatus;
@@ -10,6 +11,7 @@ use App\Jobs\SendConfirmacaoOperacao;
 use App\Models\DfeDocument;
 use App\Models\SyncState;
 use App\Queries\DocumentFilter;
+use App\Support\Audit;
 use App\Support\Fmt;
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
@@ -222,6 +224,7 @@ new #[Title('Notas recebidas')] class extends Component {
         foreach ($documents as $i => $doc) {
             $doc->update(['manifestacao_status' => ManifestacaoStatus::ConfirmacaoPendente]);
             SendConfirmacaoOperacao::dispatch($doc)->delay(now()->addSeconds($i * 2));
+            Audit::document(AuditAcao::ConfirmacaoLote, $doc);
         }
 
         $this->selecionados = [];
@@ -254,6 +257,7 @@ new #[Title('Notas recebidas')] class extends Component {
         ]);
 
         $formato === ExportFormato::Csv ? BuildCsvReport::dispatch($export) : BuildXmlExport::dispatch($export);
+        Audit::record(AuditAcao::ExportacaoPedida, $export->organization_id, descricao: $formato->label(), dados: ['export_id' => $export->id, 'filtros' => array_filter($export->filters)]);
 
         $this->redirectRoute('exports.index', navigate: true);
     }

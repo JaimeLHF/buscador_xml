@@ -102,6 +102,12 @@ class DfeDocument extends Model
         return $this->belongsTo(Company::class);
     }
 
+    /** @return HasMany<AuditLog, $this> */
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(AuditLog::class);
+    }
+
     /** @return HasMany<DfeEvent, $this> */
     public function events(): HasMany
     {

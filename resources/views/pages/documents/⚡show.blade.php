@@ -56,6 +56,15 @@ new #[Title('Nota fiscal')] class extends Component {
         return $chaves ? $this->document->company->documents()->whereIn('chave', $chaves)->pluck('id', 'chave')->all() : [];
     }
 
+    /** Últimos acessos e ações neste documento; só donos e administradores veem a auditoria. */
+    #[Computed]
+    public function auditoria()
+    {
+        return Gate::allows('manifest', $this->document)
+            ? $this->document->auditLogs()->with('user:id,name')->latest('id')->limit(10)->get()
+            : collect();
+    }
+
     /** @return list<TipoEvento> */
     #[Computed]
     public function manifestacoes(): array
@@ -92,7 +101,7 @@ new #[Title('Nota fiscal')] class extends Component {
         }
 
         $this->document->refresh();
-        unset($this->eventos, $this->manifestacoes);
+        unset($this->eventos, $this->manifestacoes, $this->auditoria);
 
         Flux::modal('manifestar')->close();
         Flux::toast(variant: 'success', text: __(':evento registrada.', ['evento' => $tipo->label()]));
@@ -462,6 +471,22 @@ new #[Title('Nota fiscal')] class extends Component {
                     @endforelse
                 </ol>
             </div>
+
+            @if ($this->auditoria->isNotEmpty())
+                <div class="space-y-3 border border-zinc-200 p-4 dark:border-zinc-700">
+                    <flux:heading level="2">{{ __('Quem mexeu nesta nota') }}</flux:heading>
+                    <ol class="space-y-3">
+                        @foreach ($this->auditoria as $log)
+                            <li wire:key="audit-{{ $log->id }}" class="text-sm">
+                                <div class="font-medium text-zinc-900 dark:text-white">{{ $log->acao->label() }}@if ($log->descricao): {{ $log->descricao }}@endif</div>
+                                <div class="text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
+                                    {{ Fmt::dateTime($log->created_at) }} · {{ $log->user?->name ?? ($log->dados['token'] ?? null ? __('API: :n', ['n' => $log->dados['token']]) : __('Sistema')) }}
+                                </div>
+                            </li>
+                        @endforeach
+                    </ol>
+                </div>
+            @endif
         </div>
     </div>
 

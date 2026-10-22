@@ -2,6 +2,7 @@
 
 namespace App\Services\Sefaz;
 
+use App\Enums\AuditAcao;
 use App\Enums\DfeSchema;
 use App\Enums\DocumentoTipo;
 use App\Enums\ManifestacaoStatus;
@@ -12,6 +13,7 @@ use App\Models\DfeDocument;
 use App\Models\DfeEvent;
 use App\Services\Documents\NfeReader;
 use App\Services\Sefaz\Exceptions\ManifestacaoException;
+use App\Support\Audit;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use NFePHP\CTe\Complements as CteComplements;
@@ -81,6 +83,7 @@ class ManifestacaoService
         );
 
         $document->update(['manifestacao_status' => ManifestacaoStatus::fromEvento($tipo)]);
+        Audit::document(AuditAcao::Manifestacao, $document, $tipo->label(), array_filter(['protocolo' => $ret->protocolo, 'cstat' => $ret->cStat, 'justificativa' => trim($xJust) ?: null]));
 
         return $event;
     }

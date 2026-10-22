@@ -78,6 +78,12 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
         return $membership?->role;
     }
 
+    /** Dono ou administrador da organização ativa (a que aparece no seletor). */
+    public function managesCurrentOrganization(): bool
+    {
+        return $this->current_organization_id !== null && (bool) $this->roleIn($this->current_organization_id)?->canManage();
+    }
+
     public function belongsToOrganization(Organization|int $organization): bool
     {
         return $this->roleIn($organization) !== null;

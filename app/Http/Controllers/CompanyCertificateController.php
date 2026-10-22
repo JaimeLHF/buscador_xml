@@ -3,9 +3,11 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Companies\StoreCompanyCertificate;
+use App\Enums\AuditAcao;
 use App\Http\Requests\StoreCertificateRequest;
 use App\Models\Company;
 use App\Services\Certificates\Exceptions\InvalidCertificateException;
+use App\Support\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
 
@@ -26,6 +28,8 @@ class CompanyCertificateController extends Controller
         } catch (InvalidCertificateException $e) {
             throw ValidationException::withMessages(['pfx' => $e->getMessage()]);
         }
+
+        Audit::record(AuditAcao::CertificadoEnviado, $company->organization_id, descricao: $company->razao_social, dados: ['company_id' => $company->id]);
 
         return redirect()->route('companies.show', $company)->with('success', __('Certificado salvo e validado.'));
     }
