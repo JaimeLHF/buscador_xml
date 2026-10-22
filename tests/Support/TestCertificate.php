@@ -16,14 +16,18 @@ final class TestCertificate
         int $validDays = 365,
         bool $legacy = false,
         bool $withCnpj = true,
+        ?string $cpf = null,
     ): string {
         $dir = sys_get_temp_dir().'/testcert-'.bin2hex(random_bytes(6));
         mkdir($dir);
 
         try {
-            $san = $withCnpj
-                ? "subjectAltName=otherName:2.16.76.1.3.2;UTF8:RESPONSAVEL,otherName:2.16.76.1.3.3;UTF8:{$cnpj}\n"
-                : "subjectAltName=email:teste@example.com\n";
+            // e-CPF: o OID 2.16.76.1.3.1 traz data de nascimento (8) + CPF (11) + outros dados.
+            $san = match (true) {
+                $cpf !== null => "subjectAltName=otherName:2.16.76.1.3.1;UTF8:01011980{$cpf}00000000000000000000000000000\n",
+                $withCnpj => "subjectAltName=otherName:2.16.76.1.3.2;UTF8:RESPONSAVEL,otherName:2.16.76.1.3.3;UTF8:{$cnpj}\n",
+                default => "subjectAltName=email:teste@example.com\n",
+            };
 
             file_put_contents("{$dir}/openssl.cnf", "[req]\ndistinguished_name=dn\nprompt=no\n[dn]\nCN=EMPRESA TESTE LTDA:{$cnpj}\nO=ICP-Brasil\n[ext]\n{$san}");
 

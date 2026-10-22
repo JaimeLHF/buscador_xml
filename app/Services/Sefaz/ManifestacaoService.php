@@ -109,6 +109,13 @@ class ManifestacaoService
 
     private function motivoBloqueio(DfeDocument $document, TipoEvento $tipo): ?string
     {
+        $certificado = $document->company->activeCertificate;
+
+        // O evento é assinado pela própria empresa: no modo "certificado do contador" só manifesta quem também enviou o dela.
+        if ($document->company->buscaPeloContador() && ($certificado === null || $certificado->isExpired())) {
+            return 'Para manifestar é preciso o certificado digital da própria empresa (a busca pelo certificado do contador não permite).';
+        }
+
         $status = $document->manifestacao_status;
 
         if ($tipo === TipoEvento::PrestacaoDesacordo) {
@@ -118,6 +125,7 @@ class ManifestacaoService
         return match (true) {
             ! $tipo->isManifestacao() => 'Evento não é uma manifestação do destinatário.',
             $document->tipo !== DocumentoTipo::Nfe => 'A manifestação do destinatário só existe para NF-e.',
+            $document->emitidaPelaEmpresa() => 'A NF-e foi emitida pela própria empresa: quem manifesta é o destinatário.',
             $document->situacao === Situacao::Cancelada => 'A NF-e está cancelada.',
             (bool) $status?->isConclusive() => 'A manifestação desta NF-e já foi concluída.',
             $tipo === TipoEvento::CienciaOperacao && $status === ManifestacaoStatus::Ciencia => 'A Ciência da Operação já foi registrada.',

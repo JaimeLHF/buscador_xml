@@ -10,6 +10,8 @@ use App\Services\CnpjLookup\CnpjaOpenProvider;
 use App\Services\CnpjLookup\CnpjLookup;
 use App\Services\Sefaz\SefazGateway;
 use App\Services\Sefaz\SpedNfeGateway;
+use App\Services\SefSc\SefScGateway;
+use App\Services\SefSc\SefScSoapGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Encryption\Encrypter;
@@ -44,6 +46,7 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->bind(SefazGateway::class, SpedNfeGateway::class);
+        $this->app->bind(SefScGateway::class, SefScSoapGateway::class);
 
         $this->app->bind(CnpjLookup::class, fn ($app): CnpjLookup => new CnpjLookup([
             $app->make(BrasilApiProvider::class),

@@ -12,7 +12,10 @@ class CertificateInspector
 {
     public function __construct(private PfxNormalizer $normalizer) {}
 
-    public function inspect(#[\SensitiveParameter] string $pfx, #[\SensitiveParameter] string $password): CertificateData
+    /**
+     * @param  bool  $aceitaCpf  certificado do escritório: pode ser o e-CPF do próprio contador
+     */
+    public function inspect(#[\SensitiveParameter] string $pfx, #[\SensitiveParameter] string $password, bool $aceitaCpf = false): CertificateData
     {
         $normalized = $this->normalizer->normalize($pfx, $password);
 
@@ -26,13 +29,19 @@ class CertificateInspector
 
         // Apesar do PHPDoc, o sped-common retorna null quando o OID de CNPJ não existe (e-CPF).
         if (blank($cnpj) || ! Cnpj::isValid($cnpj)) {
-            throw InvalidCertificateException::withoutCnpj();
+            $cpf = $aceitaCpf ? preg_replace('/\D/', '', (string) $certificate->getCpf()) : '';
+
+            if (strlen((string) $cpf) !== 11) {
+                throw $aceitaCpf ? InvalidCertificateException::withoutDocumento() : InvalidCertificateException::withoutCnpj();
+            }
+
+            $cnpj = (string) $cpf;
         }
 
         return new CertificateData(
             pfx: $normalized,
             titular: $this->titular($certificate->getCompanyName()),
-            cnpj: Cnpj::normalize($cnpj),
+            cnpj: strlen($cnpj) === 11 ? $cnpj : Cnpj::normalize($cnpj),
             validFrom: CarbonImmutable::instance($certificate->getValidFrom()),
             validTo: CarbonImmutable::instance($certificate->getValidTo()),
             fingerprint: (string) openssl_x509_fingerprint((string) $certificate->publicKey, 'sha256'),

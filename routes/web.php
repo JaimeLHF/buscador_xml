@@ -4,6 +4,7 @@ use App\Http\Controllers\AcceptInvitationController;
 use App\Http\Controllers\CompanyCertificateController;
 use App\Http\Controllers\DocumentFileController;
 use App\Http\Controllers\ExportDownloadController;
+use App\Http\Controllers\OfficeCertificateController;
 use App\Http\Controllers\SyncNowController;
 use Illuminate\Support\Facades\Route;
 
@@ -29,6 +30,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('companies/{company}/certificates', [CompanyCertificateController::class, 'store'])
             ->middleware('throttle:10,1')
             ->name('companies.certificates.store');
+        Route::post('office-certificate', [OfficeCertificateController::class, 'store'])->middleware('throttle:10,1')->name('office-certificate.store');
         Route::post('companies/{company}/sync', SyncNowController::class)->middleware('throttle:6,1')->name('companies.sync');
 
         Route::livewire('documents', 'pages::documents.index')->name('documents.index');

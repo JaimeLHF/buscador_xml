@@ -1,6 +1,24 @@
 # Buscador XML
 
-Busca automática de NF-e (e futuramente CT-e) destinadas às empresas cadastradas, via **NFeDistribuicaoDFe** (Ambiente Nacional), com manifestação do destinatário, armazenamento dos XMLs e painel multiempresa.
+Busca automática de NF-e e CT-e das empresas cadastradas, com manifestação do destinatário, armazenamento dos XMLs e painel multiempresa.
+
+## Duas formas de buscar as notas
+
+Cada empresa escolhe a sua em **Empresas → Editar → "Como buscar as notas desta empresa?"**.
+
+| | Certificado da própria empresa | Certificado do contador (só SC) |
+|---|---|---|
+| Certificado | A1 de cada empresa | Um só, do escritório contábil (e-CNPJ) ou do contador (e-CPF), para todas as empresas |
+| Fonte | Ambiente Nacional (NFeDistribuicaoDFe e CTeDistribuicaoDFe) | SEF-SC, web service NfeDownloadContab (BT SC-2026/003) |
+| Empresas | Qualquer UF | Só Santa Catarina |
+| Documentos | NF-e recebidas (resumo ou completas) e CT-e | NF-e emitidas e recebidas, sempre completas, com eventos |
+| Histórico | Desde o primeiro NSU disponível | Mês atual e os 2 anteriores; atraso de cerca de 24 horas |
+| Manifestação | Sim | Não (exige o certificado da empresa; dá para enviar os dois) |
+| Ambiente | Homologação ou produção | Só produção |
+
+**Requisito do modo contador:** a SEF-SC confere se o titular do certificado está cadastrado como **contador da empresa** no cadastro de contribuintes. Se não estiver, a busca é rejeitada com 8002, e a tela da empresa explica o que fazer. Procuração sem esse vínculo não basta.
+
+O certificado do escritório é enviado uma vez, no quadro "Certificado do contador (empresas de SC)" da tela Empresas.
 
 ## Stack
 
@@ -107,6 +125,19 @@ Comandos:
 
 **CNPJ alfanumérico:** o sped-nfe 5.2.8 e o sped-cte 5.0.1 validam as mensagens com XSDs que só aceitam CNPJ numérico. `NfeTools`/`CteTools` (`app/Services/Sefaz/Tools`) fazem a validação local sobre uma cópia em que o CNPJ alfanumérico válido vira um número fixo; a mensagem enviada não muda. Remover quando a biblioteca trouxer os XSDs novos.
 
+## Busca pela SEF-SC (modo contador)
+
+Fluxo: `sefaz:dispatch-due` → job `SyncCompanySefSc` (fila `sefaz`) → `SefScDistribuicaoService`. Pedido `distNFeSC` 2.00 com `indXML=1` e `indAtor=3`, validado contra o XSD oficial (`resources/schemes/sef-sc`) antes do envio.
+
+| Retorno | Ação |
+|---|---|
+| 118 com 50 documentos | Processa e pede o próximo lote na hora |
+| 118 com menos de 50, ou 117 | Sincronizado: espera 12 horas e 10 minutos (antes disso a SEF-SC bloqueia com 657) |
+| 110 | Reprocessamento: tenta em 1 hora |
+| 8002, 657 e outras rejeições | Mensagem em linguagem simples na tela da empresa; espera 12 horas |
+
+O NSU da SEF-SC fica em `sef_sc_sync_states`, separado do NSU do Ambiente Nacional; trocar de modo não perde nenhum dos dois. Os documentos passam pelo mesmo `DocumentProcessor`, então a lista, o DANFE, a exportação, a API e o webhook funcionam igual. Notas emitidas pela própria empresa aparecem com a etiqueta "Emitida".
+
 ## Manifestação do destinatário
 
 - `manifestacao_automatica` ligada: ao receber um `resNFe` autorizado e sem manifestação, enfileira a **Ciência da Operação (210210)** depois que a página da distribuição é gravada. Em seguida, tenta o `procNFe` por `consChNFe`, só se o limite de 20/hora do CNPJ permitir; senão, o XML chega na próxima distribuição.
@@ -202,6 +233,9 @@ Webhook: `POST` JSON em `documento.recebido`, `documento.xml_completo` e `docume
 | `SEFAZ_BLOCKED_ALERT_AFTER` | `3` | 656 seguidos até o alerta |
 | `SEFAZ_XML_DISK` | `local` | Disco dos XMLs e ZIPs |
 | `SEFAZ_QUEUE` | `sefaz` | Fila dos jobs da SEFAZ |
+| `SEF_SC_URL` | endereço de produção da SEF-SC | Web service NfeDownloadContab |
+| `SEF_SC_ESPERA_MINUTOS` | `730` | Espera depois de sincronizar pela SEF-SC |
+| `WEBHOOK_QUEUE` | `default` | Fila dos avisos de webhook |
 | `HORIZON_ADMINS` | vazio | E-mails com acesso ao Horizon fora de `local` |
 
 ## Solução de problemas
@@ -213,7 +247,8 @@ Webhook: `POST` JSON em `documento.recebido`, `documento.xml_completo` e `docume
 | "Senha do certificado incorreta" com senha certa | Arquivo corrompido. Exporte o `.pfx` de novo. |
 | Ficam só resumos (`resNFe`) | Manifestação automática desligada, ou Ciência com erro (veja o filtro "Manifestação" na lista) |
 | "Consultas em produção estão desabilitadas" | `SEFAZ_ALLOW_PRODUCTION=false` |
-| CNPJ alfanumérico falha com "XML não é válido" | Limitação do sped-nfe 5.2.8 (ver acima) |
+| Modo contador: "não está cadastrado na SEF-SC como contador desta empresa" (8002) | O titular do certificado do escritório não é o contador da empresa no cadastro da SEF-SC |
+| Modo contador não busca nada | Confira na tela da empresa: UF SC, ambiente Produção, `SEFAZ_ALLOW_PRODUCTION=true` e certificado do escritório válido |
 
 ## Testes
 

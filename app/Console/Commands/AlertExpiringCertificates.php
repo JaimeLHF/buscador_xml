@@ -19,7 +19,7 @@ class AlertExpiringCertificates extends Command
     public function handle(): int
     {
         Certificate::query()
-            ->with('company.organization')
+            ->with(['company.organization', 'organization'])
             ->where('active', true)
             ->whereBetween('valid_to', [now(), now()->addDays(max(self::DAYS) + 1)])
             ->each(function (Certificate $certificate): void {
@@ -30,7 +30,7 @@ class AlertExpiringCertificates extends Command
                     return;
                 }
 
-                Notification::send($certificate->company->organization->managers(), new CertificateExpiring($certificate, $days));
+                Notification::send(($certificate->isOffice() ? $certificate->organization : $certificate->company->organization)->managers(), new CertificateExpiring($certificate, $days));
             });
 
         return self::SUCCESS;

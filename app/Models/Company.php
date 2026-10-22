@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Enums\Ambiente;
 use App\Enums\DocumentoTipo;
+use App\Enums\ModoBusca;
 use App\Enums\Uf;
 use App\Support\Cnpj;
 use Database\Factories\CompanyFactory;
@@ -24,8 +25,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property Ambiente $ambiente
  * @property bool $ativo
  * @property bool $manifestacao_automatica
+ * @property ModoBusca $modo_busca
  */
-#[Fillable(['cnpj', 'razao_social', 'nome_fantasia', 'uf', 'ambiente', 'ativo', 'manifestacao_automatica'])]
+#[Fillable(['cnpj', 'razao_social', 'nome_fantasia', 'uf', 'ambiente', 'ativo', 'manifestacao_automatica', 'modo_busca'])]
 class Company extends Model
 {
     /** @use HasFactory<CompanyFactory> */
@@ -44,6 +46,8 @@ class Company extends Model
         });
     }
 
+    protected $attributes = ['modo_busca' => 'certificado_empresa'];
+
     protected function casts(): array
     {
         return [
@@ -51,6 +55,7 @@ class Company extends Model
             'ambiente' => Ambiente::class,
             'ativo' => 'boolean',
             'manifestacao_automatica' => 'boolean',
+            'modo_busca' => ModoBusca::class,
         ];
     }
 
@@ -94,6 +99,28 @@ class Company extends Model
     public function sefazRequests(): HasMany
     {
         return $this->hasMany(SefazRequest::class);
+    }
+
+    /** @return HasOne<SefScSyncState, $this> */
+    public function sefScSyncState(): HasOne
+    {
+        return $this->hasOne(SefScSyncState::class);
+    }
+
+    public function sefScState(): SefScSyncState
+    {
+        return $this->sefScSyncState()->firstOrCreate();
+    }
+
+    public function buscaPeloContador(): bool
+    {
+        return $this->modo_busca === ModoBusca::ContadorSc;
+    }
+
+    /** Certificado usado para buscar as notas: o da empresa ou, no modo contador, o do escritório. */
+    public function certificadoDeBusca(): ?Certificate
+    {
+        return $this->buscaPeloContador() ? $this->organization->officeCertificate : $this->activeCertificate;
     }
 
     public function syncState(DocumentoTipo $tipo = DocumentoTipo::Nfe): SyncState

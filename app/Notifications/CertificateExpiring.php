@@ -25,6 +25,14 @@ class CertificateExpiring extends Notification implements ShouldQueue
     {
         $company = $this->certificate->company;
 
+        if ($company === null) {
+            return (new MailMessage)
+                ->subject("Certificado do escritório vence em {$this->days} dias")
+                ->line("O certificado do escritório ({$this->certificate->titular}) vence em ".Fmt::date($this->certificate->valid_to).'.')
+                ->line('Depois do vencimento a busca pela SEF-SC para as empresas de SC é interrompida.')
+                ->action('Enviar novo certificado', route('companies.index'));
+        }
+
         return (new MailMessage)
             ->subject("Certificado de {$company->razao_social} vence em {$this->days} dias")
             ->line("O certificado A1 da empresa {$company->razao_social} (".Fmt::cnpj($company->cnpj).') vence em '.Fmt::date($this->certificate->valid_to).'.')
@@ -36,6 +44,16 @@ class CertificateExpiring extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         $company = $this->certificate->company;
+
+        if ($company === null) {
+            return [
+                'type' => 'certificate_expiring',
+                'level' => $this->days <= 7 ? 'danger' : 'warning',
+                'message' => "Certificado do escritório vence em {$this->days} dias (".Fmt::date($this->certificate->valid_to).').',
+                'url' => route('companies.index', absolute: false),
+                'organization_id' => $this->certificate->organization_id,
+            ];
+        }
 
         return [
             'type' => 'certificate_expiring',

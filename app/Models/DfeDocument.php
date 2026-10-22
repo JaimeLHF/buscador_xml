@@ -68,6 +68,12 @@ class DfeDocument extends Model
         };
     }
 
+    /** Nota de saída: a própria empresa é a emitente (a busca pela SEF-SC traz emitidas e recebidas). */
+    public function emitidaPelaEmpresa(): bool
+    {
+        return $this->emitente_cnpj !== null && $this->emitente_cnpj === $this->company->cnpj;
+    }
+
     public function conclusivaNoPrazo(): bool
     {
         return $this->data_emissao !== null

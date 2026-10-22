@@ -3,6 +3,7 @@
 namespace App\Concerns;
 
 use App\Enums\Ambiente;
+use App\Enums\ModoBusca;
 use App\Enums\Uf;
 use App\Models\Company;
 use App\Rules\ValidCnpj;
@@ -38,6 +39,7 @@ trait CompanyValidationRules
             'ambiente' => ['required', Rule::enum(Ambiente::class)],
             'ativo' => ['boolean'],
             'manifestacao_automatica' => ['boolean'],
+            'modo_busca' => ['required', Rule::enum(ModoBusca::class)],
         ];
     }
 
@@ -52,6 +54,7 @@ trait CompanyValidationRules
             'nome_fantasia' => 'nome fantasia',
             'uf' => 'UF',
             'ambiente' => 'ambiente',
+            'modo_busca' => 'forma de busca',
         ];
     }
 }
