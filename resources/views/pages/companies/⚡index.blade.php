@@ -65,48 +65,7 @@ new #[Title('Empresas')] class extends Component {
         @endcan
     </div>
 
-    {{-- Certificado do escritório: só aparece aberto quando alguma empresa depende dele ou ele já foi enviado. --}}
-    <div class="border border-zinc-200 p-4 dark:border-zinc-700" x-data="{ aberto: {{ $this->escritorio || $this->empresasPeloContador ? 'true' : 'false' }} }">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-            <div class="min-w-0 space-y-1">
-                <flux:heading level="2">{{ __('Certificado do contador (empresas de SC)') }}</flux:heading>
-                <flux:text size="sm">{{ __('Para buscar notas de empresas de Santa Catarina sem o certificado de cada uma: um único certificado do escritório contábil (e-CNPJ ou e-CPF do contador) serve para todas as empresas marcadas com "Certificado do contador".') }}</flux:text>
-            </div>
-            <div class="flex items-center gap-2">
-                @if ($this->escritorio)
-                    <x-certificate-badge :certificate="$this->escritorio" />
-                @elseif ($this->empresasPeloContador)
-                    <flux:badge size="sm" color="red">{{ __('Falta enviar') }}</flux:badge>
-                @endif
-                <flux:button size="sm" variant="ghost" x-on:click="aberto = ! aberto" x-text="aberto ? '{{ __('Fechar') }}' : '{{ __('Configurar') }}'" />
-            </div>
-        </div>
-
-        <div x-show="aberto" x-cloak class="mt-4 grid gap-6 md:grid-cols-2">
-            <div class="space-y-2 text-sm">
-                @if ($cert = $this->escritorio)
-                    <x-campos :itens="[
-                        __('Titular') => $cert->titular,
-                        strlen($cert->cnpj_certificado) === 11 ? __('CPF') : __('CNPJ') => $cert->documentoFormatado(),
-                        __('Validade') => $cert->valid_from->format('d/m/Y').' – '.$cert->valid_to->format('d/m/Y'),
-                        __('Empresas usando') => trans_choice(':n empresa|:n empresas', $this->empresasPeloContador, ['n' => $this->empresasPeloContador]),
-                    ]" />
-                @else
-                    <flux:text size="sm">{{ __('Nenhum certificado do escritório enviado.') }}</flux:text>
-                @endif
-                <flux:text size="sm">{{ __('A SEF-SC só libera as notas se o titular do certificado estiver cadastrado como contador da empresa. Depois, em cada empresa de SC, escolha "Certificado do contador" em Editar.') }}</flux:text>
-            </div>
-
-            @if (auth()->user()->managesCurrentOrganization())
-                <form method="POST" action="{{ route('office-certificate.store') }}" enctype="multipart/form-data" class="space-y-3">
-                    @csrf
-                    <flux:input type="file" name="pfx" accept=".pfx,.p12" :label="$this->escritorio ? __('Trocar certificado do escritório (.pfx)') : __('Certificado do escritório (.pfx)')" required />
-                    <flux:input type="password" name="password" :label="__('Senha do certificado')" required autocomplete="off" viewable />
-                    <flux:button type="submit" variant="primary" icon="arrow-up-tray">{{ __('Enviar certificado do escritório') }}</flux:button>
-                </form>
-            @endif
-        </div>
-    </div>
+    <x-office-certificate-panel :certificate="$this->escritorio" :empresas="$this->empresasPeloContador" :can-manage="auth()->user()->managesCurrentOrganization()" />
 
     <flux:input wire:model.live.debounce.400ms="search" icon="magnifying-glass" :placeholder="__('Buscar por razão social, fantasia ou CNPJ')" class="max-w-md" />
 

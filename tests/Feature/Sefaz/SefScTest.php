@@ -165,7 +165,7 @@ it('lets the form pick the accountant mode only for SC companies and forces prod
 
 it('shows the mode and the office certificate on the company screens', function () {
     Livewire::actingAs($this->user)->test('pages::companies.index')
-        ->assertSee('Certificado do contador (empresas de SC)')
+        ->assertSee('Certificado do contador')->assertSee('Pronto')
         ->assertSee('Contador (SC)');
 
     Livewire::actingAs($this->user)->test('pages::companies.show', ['company' => $this->company])
