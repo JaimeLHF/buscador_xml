@@ -9,6 +9,7 @@ use App\Models\DfeDocument;
 use App\Queries\DocumentFilter;
 use App\Support\Fmt;
 use Flux\Flux;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -55,6 +56,13 @@ new #[Title('Documentos')] class extends Component {
     private function filters(): array
     {
         return $this->only(['company_id', 'de', 'ate', 'emitente', 'valor_min', 'valor_max', 'situacao', 'xml', 'manifestacao', 'chave']);
+    }
+
+    /** Filtros escondidos no celular que estão em uso, para o botão "Filtros" avisar. */
+    #[Computed]
+    public function filtrosAtivos(): int
+    {
+        return count(array_filter(Arr::except($this->filters(), ['emitente']), fn ($v) => $v !== ''));
     }
 
     #[Computed]
@@ -172,39 +180,52 @@ new #[Title('Documentos')] class extends Component {
         </flux:button>
     </div>
 
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <flux:select wire:model.live="company_id" :label="__('Empresa')">
-            <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
-            @foreach ($this->companies as $c)
-                <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
-            @endforeach
-        </flux:select>
-        <flux:input type="date" wire:model.live="de" :label="__('Emissão de')" />
-        <flux:input type="date" wire:model.live="ate" :label="__('Emissão até')" />
-        <flux:input wire:model.live.debounce.400ms="emitente" :label="__('Emitente (nome ou CNPJ)')" />
-        <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_min" :label="__('Valor mínimo')" />
-        <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_max" :label="__('Valor máximo')" />
-        <flux:select wire:model.live="situacao" :label="__('Situação')">
-            <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
-            @foreach (Situacao::cases() as $s)
-                <flux:select.option :value="$s->value">{{ $s->label() }}</flux:select.option>
-            @endforeach
-        </flux:select>
-        <flux:select wire:model.live="xml" :label="__('XML')">
-            <flux:select.option value="">{{ __('Todos') }}</flux:select.option>
-            <flux:select.option value="completo">{{ __('Com XML completo') }}</flux:select.option>
-            <flux:select.option value="resumo">{{ __('Somente resumo') }}</flux:select.option>
-        </flux:select>
-        <flux:select wire:model.live="manifestacao" :label="__('Manifestação')">
-            <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
-            <flux:select.option value="nenhuma">{{ __('Sem manifestação') }}</flux:select.option>
-            @foreach (ManifestacaoStatus::cases() as $m)
-                <flux:select.option :value="$m->value">{{ $m->label() }}</flux:select.option>
-            @endforeach
-        </flux:select>
-        <flux:input wire:model.live.debounce.400ms="chave" :label="__('Chave de acesso')" class="font-mono sm:col-span-2" />
-        <div class="flex items-end">
-            <flux:button variant="ghost" wire:click="limpar">{{ __('Limpar filtros') }}</flux:button>
+    {{-- No celular só a busca por emitente fica à vista; os demais filtros abrem sob demanda para a lista aparecer logo. --}}
+    <div x-data="{ abertos: false }" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="flex items-end gap-2">
+            <div class="min-w-0 flex-1">
+                <flux:input wire:model.live.debounce.400ms="emitente" :label="__('Emitente (nome ou CNPJ)')" />
+            </div>
+            <flux:button class="sm:hidden" icon="adjustments-horizontal" x-on:click="abertos = ! abertos" x-bind:aria-expanded="abertos" aria-controls="filtros-extras">
+                {{ __('Filtros') }}@if ($this->filtrosAtivos) · {{ $this->filtrosAtivos }}@endif
+            </flux:button>
+        </div>
+
+        <div id="filtros-extras" class="contents max-sm:hidden" x-bind:class="{ 'max-sm:hidden': ! abertos }">
+            <flux:select wire:model.live="company_id" :label="__('Empresa')">
+                <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
+                @foreach ($this->companies as $c)
+                    <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
+                @endforeach
+            </flux:select>
+            <flux:input type="date" wire:model.live="de" :label="__('Emissão de')" />
+            <flux:input type="date" wire:model.live="ate" :label="__('Emissão até')" />
+            <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_min" :label="__('Valor mínimo')" />
+            <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_max" :label="__('Valor máximo')" />
+            <flux:select wire:model.live="situacao" :label="__('Situação')">
+                <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
+                @foreach (Situacao::cases() as $s)
+                    <flux:select.option :value="$s->value">{{ $s->label() }}</flux:select.option>
+                @endforeach
+            </flux:select>
+            <flux:select wire:model.live="xml" :label="__('XML')">
+                <flux:select.option value="">{{ __('Todos') }}</flux:select.option>
+                <flux:select.option value="completo">{{ __('Com XML completo') }}</flux:select.option>
+                <flux:select.option value="resumo">{{ __('Somente resumo') }}</flux:select.option>
+            </flux:select>
+            <flux:select wire:model.live="manifestacao" :label="__('Manifestação')">
+                <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
+                <flux:select.option value="nenhuma">{{ __('Sem manifestação') }}</flux:select.option>
+                @foreach (ManifestacaoStatus::cases() as $m)
+                    <flux:select.option :value="$m->value">{{ $m->label() }}</flux:select.option>
+                @endforeach
+            </flux:select>
+            <div class="sm:col-span-2">
+                <flux:input wire:model.live.debounce.400ms="chave" :label="__('Chave de acesso')" class="font-mono" />
+            </div>
+            <div class="flex items-end">
+                <flux:button variant="ghost" wire:click="limpar">{{ __('Limpar filtros') }}</flux:button>
+            </div>
         </div>
     </div>
 
@@ -233,7 +254,7 @@ new #[Title('Documentos')] class extends Component {
             @endif
             <flux:table.column>{{ __('Emissão') }}</flux:table.column>
             <flux:table.column>{{ __('Emitente') }}</flux:table.column>
-            <flux:table.column>{{ __('Destinatário') }}</flux:table.column>
+            <flux:table.column class="max-md:hidden">{{ __('Destinatário') }}</flux:table.column>
             <flux:table.column align="end">{{ __('Valor') }}</flux:table.column>
             <flux:table.column>{{ __('Situação') }}</flux:table.column>
             <flux:table.column>{{ __('Manifestação') }}</flux:table.column>
@@ -256,7 +277,7 @@ new #[Title('Documentos')] class extends Component {
                         <flux:link :href="route('documents.show', $doc)" wire:navigate>{{ $doc->emitente_nome ?? $doc->chave }}</flux:link>
                         <flux:text size="sm" class="font-mono">{{ Fmt::cnpj($doc->emitente_cnpj) }}</flux:text>
                     </flux:table.cell>
-                    <flux:table.cell>{{ $doc->company->razao_social }}</flux:table.cell>
+                    <flux:table.cell class="max-md:hidden">{{ $doc->company->razao_social }}</flux:table.cell>
                     <flux:table.cell align="end" class="tabular-nums whitespace-nowrap">{{ Fmt::money($doc->valor_total) }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:badge size="sm" :color="match ($doc->situacao) { Situacao::Autorizada => 'green', Situacao::Cancelada => 'red', default => 'amber' }">{{ $doc->situacao->label() }}</flux:badge>
