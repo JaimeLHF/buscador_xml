@@ -7,15 +7,16 @@ use App\Http\Controllers\ExportDownloadController;
 use App\Http\Controllers\SyncNowController;
 use Illuminate\Support\Facades\Route;
 
-// Ferramenta interna: a raiz leva ao painel (ou ao login, via middleware auth).
-Route::redirect('/', '/dashboard')->name('home');
+// Ferramenta interna: a raiz leva à caixa de notas (ou ao login, via middleware auth).
+Route::redirect('/', '/documents')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('organizations/create', 'pages::organizations.create')->name('organizations.create');
     Route::get('invitations/{token}', AcceptInvitationController::class)->middleware('throttle:10,1')->name('invitations.accept');
 
     Route::middleware('organization')->group(function () {
-        Route::livewire('dashboard', 'pages::dashboard')->name('dashboard');
+        // Destino padrão do login (Fortify): a caixa de entrada de notas substituiu o antigo painel.
+        Route::redirect('dashboard', '/documents')->name('dashboard');
 
         Route::livewire('organization/members', 'pages::organizations.members')->name('organizations.members');
 

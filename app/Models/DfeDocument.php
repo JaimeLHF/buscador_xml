@@ -53,6 +53,21 @@ class DfeDocument extends Model
             && $this->data_emissao->greaterThan(now()->subDays(config('sefaz.ciencia_prazo_dias'))->addHour());
     }
 
+    /**
+     * Estado da nota em linguagem simples para a caixa de entrada.
+     *
+     * @return 'pronto'|'aguardando'|'resumo'|'cancelada'
+     */
+    public function estado(): string
+    {
+        return match (true) {
+            $this->situacao === Situacao::Cancelada => 'cancelada',
+            $this->tem_xml_completo => 'pronto',
+            in_array($this->manifestacao_status, [ManifestacaoStatus::CienciaPendente, ManifestacaoStatus::Ciencia, ManifestacaoStatus::ConfirmacaoPendente, ManifestacaoStatus::Confirmada], true) => 'aguardando',
+            default => 'resumo',
+        };
+    }
+
     public function conclusivaNoPrazo(): bool
     {
         return $this->data_emissao !== null

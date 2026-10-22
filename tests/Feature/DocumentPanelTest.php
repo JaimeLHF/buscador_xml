@@ -44,15 +44,14 @@ it('filters documents by every supported criterion', function (array $filters, i
     expect($component->get('documents')->total())->toBe($expected);
 })->with([
     'sem filtros' => [[], 2],
-    'emitente por nome' => [['emitente' => 'exemplo'], 1],
-    'emitente por CNPJ' => [['emitente' => '44.333'], 1],
+    'busca por fornecedor' => [['q' => 'exemplo'], 1],
+    'busca por CNPJ' => [['q' => '44.333'], 1],
     'valor mínimo' => [['valor_min' => '1000'], 1],
     'valor máximo' => [['valor_max' => '100'], 1],
     'período' => [['de' => '2026-10-01', 'ate' => '2026-10-31'], 1],
-    'situação' => [['situacao' => 'cancelada'], 1],
-    'com XML completo' => [['xml' => 'completo'], 1],
-    'somente resumo' => [['xml' => 'resumo'], 1],
-    'chave' => [['chave' => '4226101122233300018155'], 1],
+    'aba canceladas' => [['aba' => 'canceladas'], 1],
+    'aba sem XML não repete as canceladas' => [['aba' => 'sem_xml'], 0],
+    'busca por chave' => [['q' => '4226101122233300018155'], 1],
     'sem manifestação' => [['manifestacao' => 'nenhuma'], 2],
 ]);
 
@@ -97,12 +96,12 @@ it('queues a ZIP export with the current filters and builds it', function () {
     makeDoc($this->company, ['emitente_nome' => 'OUTRO', 'resumo_xml_path' => null]);
 
     Livewire::actingAs($this->user)->test('pages::documents.index')
-        ->set('xml', 'completo')
+        ->set('q', 'exemplo')
         ->call('exportar')
         ->assertRedirect(route('exports.index'));
 
     $export = Export::sole();
-    expect($export->filters['xml'])->toBe('completo');
+    expect($export->filters['busca'])->toBe('exemplo');
     Queue::assertPushed(BuildXmlExport::class);
 
     (new BuildXmlExport($export))->handle(app(XmlStorage::class));
@@ -132,14 +131,29 @@ it('only lets the requester download an export', function () {
     $this->actingAs($colleague)->get(route('exports.download', $export))->assertForbidden();
 });
 
-it('counts the filters hidden behind the mobile toggle', function () {
-    $user = User::factory()->withOrganization()->create();
+it('counts only the filters kept in the filters drawer', function () {
+    Livewire::actingAs($this->user)->test('pages::documents.index')
+        ->assertSet('filtrosAtivos', 0)
+        ->set('q', 'ACME')
+        ->set('aba', 'sem_xml')
+        ->assertSet('filtrosAtivos', 0)
+        ->set('de', '2026-10-01')
+        ->set('valor_min', '100')
+        ->assertSet('filtrosAtivos', 2)
+        ->call('limparFiltros')
+        ->assertSet('filtrosAtivos', 0)
+        ->assertSet('q', 'ACME');
+});
 
-    Livewire::actingAs($user)->test('pages::documents.index')
-        ->assertSet('filtrosAtivos', 0)
-        ->set('emitente', 'ACME')
-        ->assertSet('filtrosAtivos', 0)
-        ->set('xml', 'resumo')
-        ->set('situacao', 'autorizada')
-        ->assertSet('filtrosAtivos', 2);
+it('splits the inbox into tabs and searches supplier or access key in one field', function () {
+    makeDoc($this->company, ['emitente_nome' => 'SÓ RESUMO LTDA', 'tem_xml_completo' => false]);
+    makeDoc($this->company, ['emitente_nome' => 'CANCELADA SA', 'situacao' => Situacao::Cancelada]);
+
+    $page = Livewire::actingAs($this->user)->test('pages::documents.index')
+        ->assertSee('XML pronto')
+        ->assertSet('contagens', ['sem_xml' => 1, 'canceladas' => 1]);
+
+    $page->set('aba', 'sem_xml')->assertSee('SÓ RESUMO LTDA')->assertDontSee('CANCELADA SA');
+    $page->set('aba', 'canceladas')->assertSee('CANCELADA SA')->assertDontSee('SÓ RESUMO LTDA');
+    $page->set('aba', '')->set('q', substr($this->document->chave, 0, 20))->assertSee(route('documents.show', $this->document), false)->assertDontSee('CANCELADA SA');
 });

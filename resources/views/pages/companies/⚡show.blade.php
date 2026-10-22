@@ -29,7 +29,8 @@ new #[Title('Empresa')] class extends Component {
             <flux:text class="font-mono">{{ $company->cnpjValue()->formatted() }} · {{ $company->uf->value }} · {{ $company->ambiente->label() }}</flux:text>
         </div>
 
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
+            <flux:button variant="ghost" icon="clock" :href="route('sefaz-log', ['company_id' => $company->id])" wire:navigate>{{ __('Histórico de buscas') }}</flux:button>
             <form method="POST" action="{{ route('companies.sync', $company) }}">
                 @csrf
                 <flux:button type="submit" icon="arrow-path">{{ __('Sincronizar agora') }}</flux:button>
@@ -93,7 +94,7 @@ new #[Title('Empresa')] class extends Component {
     <div class="space-y-3">
         <div class="flex items-center justify-between">
             <flux:heading size="lg" level="2">{{ __('Últimos documentos recebidos') }}</flux:heading>
-            <flux:link :href="route('documents.index', ['company_id' => $company->id])" wire:navigate>{{ __('Ver todos') }}</flux:link>
+            <flux:link :href="route('documents.index', ['company_id' => $company->id])" wire:navigate>{{ __('Ver notas desta empresa') }}</flux:link>
         </div>
 
         <flux:table>

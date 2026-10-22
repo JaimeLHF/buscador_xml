@@ -77,7 +77,7 @@ new #[Title('Documento')] class extends Component {
 <section class="w-full space-y-8">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="space-y-1">
-            <flux:link :href="route('companies.show', $document->company)" wire:navigate class="text-sm">← {{ $document->company->razao_social }}</flux:link>
+            <flux:link :href="route('documents.index')" wire:navigate class="text-sm">← {{ __('Notas recebidas') }}</flux:link>
             <flux:heading size="xl" level="1">{{ $document->emitente_nome ?? __('NF-e') }}</flux:heading>
             <flux:text class="font-mono break-all">{{ $document->chave }}</flux:text>
         </div>
