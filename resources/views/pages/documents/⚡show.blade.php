@@ -168,64 +168,48 @@ new #[Title('Nota fiscal')] class extends Component {
             </div>
 
             {{-- Geral --}}
-            <div x-show="aba === 'geral'" role="tabpanel" class="divide-y divide-zinc-200 dark:divide-zinc-700">
+            <div x-show="aba === 'geral'" role="tabpanel" class="space-y-4 p-4">
                 @if ($completo)
-                    <div class="grid gap-6 p-4 md:grid-cols-2">
-                        <div class="space-y-3">
-                            <flux:heading level="2">{{ __('Emitente') }}</flux:heading>
-                            <x-campos :itens="$formatarParte($nfe['emitente'])" />
-                        </div>
-                        <div class="space-y-3">
-                            <flux:heading level="2">{{ __('Destinatário') }}</flux:heading>
-                            <x-campos :itens="$formatarParte($nfe['destinatario'])" />
-                        </div>
+                    <div class="grid items-start gap-4 xl:grid-cols-2">
+                        <x-secao :titulo="__('Emitente')"><x-campos :itens="$formatarParte($nfe['emitente'])" /></x-secao>
+                        <x-secao :titulo="__('Destinatário')"><x-campos :itens="$formatarParte($nfe['destinatario'])" /></x-secao>
                     </div>
-                    <div class="space-y-3 p-4">
-                        <flux:heading level="2">{{ __('Identificação da nota') }}</flux:heading>
-                        <x-campos class="md:grid-cols-[minmax(8rem,auto)_1fr_minmax(8rem,auto)_1fr]" :itens="collect($ide)->map(fn ($v, $k) => in_array($k, ['Emissão', 'Saída/entrada'], true) ? Fmt::xmlDate($v) : $v)->all()" />
-                    </div>
+                    <x-secao :titulo="__('Identificação da nota')">
+                        <x-campos :colunas="2" :itens="collect($ide)->map(fn ($v, $k) => in_array($k, ['Emissão', 'Saída/entrada'], true) ? Fmt::xmlDate($v) : $v)->all()" />
+                    </x-secao>
                     @if ($nfe['protocolo'])
-                        <div class="space-y-3 p-4">
-                            <flux:heading level="2">{{ __('Autorização') }}</flux:heading>
-                            <x-campos :itens="collect($nfe['protocolo'])->map(fn ($v, $k) => $k === 'Autorizada em' ? Fmt::xmlDate($v) : $v)->all()" />
-                        </div>
+                        <x-secao :titulo="__('Autorização')">
+                            <x-campos :colunas="2" :itens="collect($nfe['protocolo'])->map(fn ($v, $k) => $k === 'Autorizada em' ? Fmt::xmlDate($v) : $v)->all()" />
+                        </x-secao>
                     @endif
-                    @if ($nfe['adicionais'] || $nfe['observacoes'])
-                        <div class="space-y-3 p-4">
-                            <flux:heading level="2">{{ __('Informações adicionais') }}</flux:heading>
-                            @foreach ($nfe['adicionais'] as $rotulo => $texto)
-                                <div>
-                                    <flux:text size="sm" class="text-zinc-500">{{ $rotulo }}</flux:text>
-                                    <p class="mt-1 text-sm whitespace-pre-line text-zinc-900 dark:text-zinc-100">{{ $texto }}</p>
-                                </div>
-                            @endforeach
-                            @if ($nfe['observacoes'])
-                                <x-campos :itens="collect($nfe['observacoes'])->mapWithKeys(fn ($o) => [$o['campo'] => $o['texto']])->all()" />
-                            @endif
-                        </div>
+                    @foreach ($nfe['adicionais'] as $rotulo => $texto)
+                        <x-secao :titulo="$rotulo">
+                            <p class="px-3 py-3 text-sm leading-relaxed whitespace-pre-line text-zinc-900 dark:text-zinc-100">{{ $texto }}</p>
+                        </x-secao>
+                    @endforeach
+                    @if ($nfe['observacoes'])
+                        <x-secao :titulo="__('Observações do contribuinte')">
+                            <x-campos :itens="collect($nfe['observacoes'])->mapWithKeys(fn ($o) => [$o['campo'] => $o['texto']])->all()" />
+                        </x-secao>
                     @endif
                     @if ($nfe['autorizados'] || $nfe['responsavel'])
-                        <div class="grid gap-6 p-4 md:grid-cols-2">
+                        <div class="grid items-start gap-4 xl:grid-cols-2">
                             @if ($nfe['autorizados'])
-                                <div class="space-y-3">
-                                    <flux:heading level="2">{{ __('Autorizados a baixar o XML') }}</flux:heading>
-                                    <p class="text-sm tabular-nums">{{ collect($nfe['autorizados'])->map(fn ($d) => Fmt::cnpj($d))->join(', ') }}</p>
-                                </div>
+                                <x-secao :titulo="__('Autorizados a baixar o XML')">
+                                    <p class="px-3 py-3 text-sm tabular-nums">{{ collect($nfe['autorizados'])->map(fn ($d) => Fmt::cnpj($d))->join(', ') }}</p>
+                                </x-secao>
                             @endif
                             @if ($nfe['responsavel'])
-                                <div class="space-y-3">
-                                    <flux:heading level="2">{{ __('Responsável técnico (sistema emissor)') }}</flux:heading>
-                                    <x-campos :itens="$formatarParte($nfe['responsavel'])" />
-                                </div>
+                                <x-secao :titulo="__('Responsável técnico (sistema emissor)')"><x-campos :itens="$formatarParte($nfe['responsavel'])" /></x-secao>
                             @endif
                         </div>
                     @endif
                 @elseif ($nfe)
-                    <div class="p-4">
+                    <x-secao :titulo="__('Resumo da nota')">
                         <x-campos :itens="collect($nfe['resumo'])->map(fn ($v, $k) => match ($k) { 'Emissão', 'Autorizada em' => Fmt::xmlDate($v), 'Valor total' => Fmt::money($v), 'CNPJ' => Fmt::cnpj($v), default => $v })->all()" />
-                    </div>
+                    </x-secao>
                 @else
-                    <div class="p-4"><flux:text>{{ __('Não foi possível ler o XML desta nota. Use o botão XML para baixar o arquivo original.') }}</flux:text></div>
+                    <flux:text>{{ __('Não foi possível ler o XML desta nota. Use o botão XML para baixar o arquivo original.') }}</flux:text>
                 @endif
             </div>
 
@@ -296,42 +280,41 @@ new #[Title('Nota fiscal')] class extends Component {
                 </div>
 
                 {{-- Transporte e pagamento --}}
-                <div x-show="aba === 'transporte'" x-cloak role="tabpanel" class="divide-y divide-zinc-200 dark:divide-zinc-700">
-                    <div class="space-y-3 p-4">
-                        <flux:heading level="2">{{ __('Transporte') }}</flux:heading>
+                <div x-show="aba === 'transporte'" x-cloak role="tabpanel" class="space-y-4 p-4">
+                    <x-secao :titulo="__('Transporte')">
                         <x-campos :itens="collect($nfe['transporte']['dados'] ?? [])->map(fn ($v, $k) => str_starts_with($k, 'CNPJ') ? Fmt::cnpj($v) : $v)->all()" />
-                        @foreach ($nfe['transporte']['volumes'] ?? [] as $vol)
-                            <x-campos :itens="collect($vol)->map(fn ($v, $k) => str_starts_with($k, 'Peso') || $k === 'Quantidade' ? Fmt::num($v, 3) : $v)->all()" />
-                        @endforeach
-                    </div>
+                    </x-secao>
+                    @foreach ($nfe['transporte']['volumes'] ?? [] as $vol)
+                        <x-secao :titulo="__('Volumes')">
+                            <x-campos :colunas="2" :itens="collect($vol)->map(fn ($v, $k) => str_starts_with($k, 'Peso') || $k === 'Quantidade' ? Fmt::num($v, 3) : $v)->all()" />
+                        </x-secao>
+                    @endforeach
                     @if ($nfe['cobranca'])
-                        <div class="space-y-3 p-4">
-                            <flux:heading level="2">{{ __('Cobrança') }}</flux:heading>
+                        <x-secao :titulo="__('Cobrança')">
                             @if ($nfe['cobranca']['fatura'])
-                                <x-campos :itens="collect($nfe['cobranca']['fatura'])->map(fn ($v, $k) => $k === 'Fatura' ? $v : Fmt::money($v))->all()" />
+                                <x-campos :colunas="2" :itens="collect($nfe['cobranca']['fatura'])->map(fn ($v, $k) => $k === 'Fatura' ? $v : Fmt::money($v))->all()" />
                             @endif
                             @if ($nfe['cobranca']['duplicatas'])
-                                <table class="w-full max-w-md text-sm">
-                                    <thead class="text-xs tracking-wide text-zinc-500 uppercase dark:text-zinc-400">
-                                        <tr><th class="py-1 text-start font-medium">{{ __('Parcela') }}</th><th class="py-1 text-start font-medium">{{ __('Vencimento') }}</th><th class="py-1 text-end font-medium">{{ __('Valor') }}</th></tr>
+                                <table class="w-full border-t border-zinc-200 text-sm dark:border-zinc-700">
+                                    <thead class="bg-zinc-50 text-xs tracking-wide text-zinc-500 uppercase dark:bg-white/[0.03] dark:text-zinc-400">
+                                        <tr><th class="px-3 py-2 text-start font-medium">{{ __('Parcela') }}</th><th class="px-3 py-2 text-start font-medium">{{ __('Vencimento') }}</th><th class="px-3 py-2 text-end font-medium">{{ __('Valor') }}</th></tr>
                                     </thead>
-                                    <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                    <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
                                         @foreach ($nfe['cobranca']['duplicatas'] as $dup)
-                                            <tr><td class="py-1 tabular-nums">{{ $dup['numero'] }}</td><td class="py-1 tabular-nums">{{ Fmt::xmlDate($dup['vencimento'], false) }}</td><td class="py-1 text-end tabular-nums">{{ Fmt::money($dup['valor']) }}</td></tr>
+                                            <tr><td class="px-3 py-2 tabular-nums">{{ $dup['numero'] }}</td><td class="px-3 py-2 tabular-nums">{{ Fmt::xmlDate($dup['vencimento'], false) }}</td><td class="px-3 py-2 text-end tabular-nums">{{ Fmt::money($dup['valor']) }}</td></tr>
                                         @endforeach
                                     </tbody>
                                 </table>
                             @endif
-                        </div>
+                        </x-secao>
                     @endif
-                    <div class="space-y-3 p-4">
-                        <flux:heading level="2">{{ __('Pagamento') }}</flux:heading>
+                    <x-secao :titulo="__('Pagamento')">
                         @forelse ($nfe['pagamentos'] as $pag)
-                            <x-campos :itens="array_filter([__('Forma') => $pag['forma'].($pag['descricao'] ? ' – '.$pag['descricao'] : ''), __('Condição') => $pag['prazo'], __('Valor') => $moeda($pag['valor'])])" />
+                            <x-campos :class="$loop->first ? '' : 'border-t border-zinc-200 dark:border-zinc-700'" :itens="array_filter([__('Forma') => $pag['forma'].($pag['descricao'] ? ' – '.$pag['descricao'] : ''), __('Condição') => $pag['prazo'], __('Valor') => $moeda($pag['valor'])])" />
                         @empty
-                            <flux:text size="sm">{{ __('Sem informação de pagamento no XML.') }}</flux:text>
+                            <p class="px-3 py-3 text-sm text-zinc-500">{{ __('Sem informação de pagamento no XML.') }}</p>
                         @endforelse
-                    </div>
+                    </x-secao>
                 </div>
             @endif
 
