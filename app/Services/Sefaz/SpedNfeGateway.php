@@ -8,11 +8,11 @@ use App\Enums\TipoEvento;
 use App\Enums\Uf;
 use App\Models\Company;
 use App\Services\Sefaz\Exceptions\SefazException;
+use App\Services\Sefaz\Tools\CteTools;
+use App\Services\Sefaz\Tools\NfeTools;
 use InvalidArgumentException;
 use NFePHP\Common\Certificate;
 use NFePHP\Common\Soap\SoapCurl;
-use NFePHP\CTe\Tools as CteTools;
-use NFePHP\NFe\Tools;
 
 class SpedNfeGateway implements SefazGateway
 {
@@ -51,11 +51,11 @@ class SpedNfeGateway implements SefazGateway
         return new EventoResponse($tools->lastRequest, $response);
     }
 
-    private function tools(Company $company): Tools
+    private function tools(Company $company): NfeTools
     {
         [$config, $certificate, $soap] = $this->prepare($company, 'PL_009_V4');
 
-        $tools = new Tools($config, $certificate);
+        $tools = new NfeTools($config, $certificate);
         $tools->loadSoapClass($soap);
 
         return $tools;

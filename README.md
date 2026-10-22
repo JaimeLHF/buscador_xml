@@ -105,7 +105,7 @@ Comandos:
 ./vendor/bin/sail artisan sefaz:sync 1         # sincroniza a empresa 1 agora (respeita next_check_at e o lock)
 ```
 
-**Limitação conhecida:** o sped-nfe 5.2.8 ainda valida o `distDFeInt` com XSD que só aceita CNPJ numérico. Empresas com CNPJ alfanumérico registram o erro de validação e aguardam 65 min até a biblioteca ser atualizada.
+**CNPJ alfanumérico:** o sped-nfe 5.2.8 e o sped-cte 5.0.1 validam as mensagens com XSDs que só aceitam CNPJ numérico. `NfeTools`/`CteTools` (`app/Services/Sefaz/Tools`) fazem a validação local sobre uma cópia em que o CNPJ alfanumérico válido vira um número fixo; a mensagem enviada não muda. Remover quando a biblioteca trouxer os XSDs novos.
 
 ## Manifestação do destinatário
 
@@ -113,6 +113,7 @@ Comandos:
 - Confirmação (210200), Desconhecimento (210220) e Operação não Realizada (210240, justificativa de 15 a 255 caracteres) são manuais, na página do documento, com confirmação. Só proprietário e admin.
 - Bloqueios: NF-e cancelada, manifestação conclusiva já registrada, Ciência repetida. Duplicidade (573) conta como registrado.
 - O evento autorizado é guardado como `procEventoNFe` (assinatura + protocolo).
+- **CT-e:** Prestação do Serviço em Desacordo (610110), manual, com descrição de 15 a 255 caracteres. Só quando a empresa é a tomadora do serviço e até 45 dias da emissão (`SEFAZ_DESACORDO_PRAZO_DIAS`). Vai para a SEFAZ autorizadora do CT-e (UF da chave) e fica guardado como `procEventoCTe`.
 
 ## Painel
 
@@ -120,12 +121,34 @@ Comandos:
 |---|---|
 | Dashboard (indicadores e alertas da organização) | `/dashboard` |
 | Empresas, certificado, "Sincronizar agora" | `/companies` |
-| Documentos (filtros, XML, DANFE, exportar ZIP) | `/documents` |
-| Exportações ZIP (expiram em 7 dias) | `/exports` |
+| Documentos (filtros, XML, DANFE, exportar ZIP ou planilha CSV) | `/documents` |
+| Downloads ZIP/CSV (expiram em 7 dias) | `/exports` |
+| Auditoria (só proprietário e admin) | `/organization/audit` |
+| Integrações: chaves da API e webhook (só proprietário e admin) | `/organization/integrations` |
 | Log de requisições à SEFAZ | `/sefaz-log` |
 | Membros e convites | `/organization/members` |
 
 Alertas por e-mail e no dashboard (só proprietários e admins): certificado vencendo em 30/15/7 dias (todo dia às 08:00) e 3 consumos indevidos (656) seguidos (`SEFAZ_BLOCKED_ALERT_AFTER`).
+
+A planilha CSV usa `;`, vírgula decimal e BOM UTF-8 (abre direto no Excel em português). A chave sai como `="..."` para não virar notação científica, e textos vindos do XML que começam com `=`, `+`, `-` ou `@` ganham um apóstrofo (sem fórmulas injetadas).
+
+## Auditoria
+
+`audit_logs` registra, só por inserção: XML baixado (painel ou API), DANFE/DACTE aberto, manifestações (com protocolo), Confirmação em lote, downloads pedidos e baixados, certificado enviado, chaves de API e webhook alterados. Guarda usuário (ou o nome da chave de API), IP e documento. A página do documento mostra os últimos 10 registros para proprietários e admins.
+
+## API de integração e webhook
+
+Só leitura, por organização. Chave criada em Integrações; só o hash SHA-256 fica no banco e o token (`bxml_...`) aparece uma vez. Limite de 120 chamadas/min por chave.
+
+```bash
+curl -H "Authorization: Bearer bxml_..." "http://localhost:8081/api/v1/documents?alterados_desde=2026-10-01T00:00:00-03:00"
+curl -H "Authorization: Bearer bxml_..." http://localhost:8081/api/v1/documents/{chave}
+curl -H "Authorization: Bearer bxml_..." http://localhost:8081/api/v1/documents/{chave}/xml
+```
+
+A lista vem ordenada por `updated_at` com cursor (`proximo_cursor` → parâmetro `cursor`). Filtros: `tipo`, `situacao`, `xml`, `de`, `ate`, `busca`, `por_pagina` (até 100).
+
+Webhook: `POST` JSON em `documento.recebido`, `documento.xml_completo` e `documento.cancelado`, depois do commit da página da distribuição. Header `X-Buscador-Assinatura: sha256=<HMAC-SHA256 do corpo com o segredo>`. Até 5 tentativas (1, 5, 15 e 60 min). Contra SSRF: só HTTPS (HTTP apenas em `local`), sem redirecionamento, IPs privados/reservados recusados e o IP validado é fixado na conexão (`CURLOPT_RESOLVE`). Fila `WEBHOOK_QUEUE` (padrão `default`).
 
 ## Segurança
 
