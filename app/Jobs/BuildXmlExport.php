@@ -39,7 +39,7 @@ class BuildXmlExport implements ShouldQueue
 
         DocumentFilter::apply($this->export->organization, $this->export->filters)
             ->with('company:id,cnpj')
-            ->select(['id', 'company_id', 'chave', 'xml_path', 'resumo_xml_path', 'tem_xml_completo'])
+            ->select(['id', 'company_id', 'chave', 'schema', 'xml_path', 'resumo_xml_path', 'tem_xml_completo'])
             ->lazyById(500)
             ->each(function ($document) use ($zip, $storage, &$total): void {
                 $path = $document->xml_path ?? $document->resumo_xml_path;
@@ -49,7 +49,7 @@ class BuildXmlExport implements ShouldQueue
                     return;
                 }
 
-                $suffix = $document->tem_xml_completo ? 'procNFe' : 'resNFe';
+                $suffix = $document->tem_xml_completo ? $document->schema->value : 'resNFe';
                 $zip->addFromString("{$document->company->cnpj}/{$document->chave}-{$suffix}.xml", $content);
                 $total++;
             });

@@ -23,15 +23,16 @@ it('dispatches only active companies with a valid certificate whose check is due
 
     $due = companyWithCertificate();
     $waiting = companyWithCertificate();
-    $waiting->syncState()->update(['next_check_at' => now()->addMinutes(30)]);
+    $waiting->syncStates()->update(['next_check_at' => now()->addMinutes(30)]);
     $inactive = companyWithCertificate(['ativo' => false]);
     $production = companyWithCertificate(['ambiente' => Ambiente::Producao]);
     $withoutCertificate = Company::factory()->create();
 
     $this->artisan('sefaz:dispatch-due')->assertSuccessful();
 
-    Queue::assertPushed(SyncCompanyDfe::class, 1);
-    Queue::assertPushed(SyncCompanyDfe::class, fn (SyncCompanyDfe $job) => $job->company->is($due) && $job->queue === 'sefaz');
+    // Um job por tipo de documento (NF-e e CT-e), só da empresa liberada.
+    Queue::assertPushed(SyncCompanyDfe::class, 2);
+    Queue::assertNotPushed(SyncCompanyDfe::class, fn (SyncCompanyDfe $job) => ! $job->company->is($due) || $job->queue !== 'sefaz');
 });
 
 it('skips companies whose certificate expired', function () {

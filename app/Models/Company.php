@@ -38,7 +38,9 @@ class Company extends Model
         });
 
         static::created(function (Company $company): void {
-            $company->syncStates()->create(['tipo' => DocumentoTipo::Nfe]);
+            foreach (DocumentoTipo::cases() as $tipo) {
+                $company->syncStates()->create(['tipo' => $tipo]);
+            }
         });
     }
 

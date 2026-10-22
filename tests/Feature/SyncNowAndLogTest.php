@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Companies\StoreCompanyCertificate;
+use App\Enums\DocumentoTipo;
 use App\Enums\SefazServico;
 use App\Jobs\SyncCompanyDfe;
 use App\Models\Company;
@@ -23,7 +24,7 @@ it('enqueues a sync when the CNPJ is allowed to query', function () {
 });
 
 it('respects next_check_at and tells when it can run', function () {
-    $this->company->syncState()->update(['next_check_at' => now()->addMinutes(40)]);
+    $this->company->syncStates()->update(['next_check_at' => now()->addMinutes(40)]);
 
     $this->actingAs($this->user)->post(route('companies.sync', $this->company))
         ->assertSessionHas('error', fn (string $msg) => str_contains($msg, 'a partir de'));
@@ -31,8 +32,18 @@ it('respects next_check_at and tells when it can run', function () {
     Queue::assertNothingPushed();
 });
 
+it('queues only the document types whose wait is over', function () {
+    $this->company->syncState()->update(['next_check_at' => now()->addMinutes(40)]);
+
+    $this->actingAs($this->user)->post(route('companies.sync', $this->company))->assertSessionHas('success');
+
+    Queue::assertPushed(SyncCompanyDfe::class, 1);
+    Queue::assertPushed(SyncCompanyDfe::class, fn ($job) => $job->tipo === DocumentoTipo::Cte);
+});
+
 it('respects the shared CNPJ cooldown', function () {
     app(CnpjCooldown::class)->set($this->company, now()->addMinutes(30)->toImmutable());
+    app(CnpjCooldown::class)->set($this->company, now()->addMinutes(30)->toImmutable(), DocumentoTipo::Cte);
 
     $this->actingAs($this->user)->post(route('companies.sync', $this->company))->assertSessionHas('error');
 

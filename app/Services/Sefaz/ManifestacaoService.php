@@ -3,6 +3,7 @@
 namespace App\Services\Sefaz;
 
 use App\Enums\DfeSchema;
+use App\Enums\DocumentoTipo;
 use App\Enums\ManifestacaoStatus;
 use App\Enums\SefazServico;
 use App\Enums\Situacao;
@@ -102,6 +103,7 @@ class ManifestacaoService
 
         return match (true) {
             ! $tipo->isManifestacao() => 'Evento não é uma manifestação do destinatário.',
+            $document->tipo !== DocumentoTipo::Nfe => 'A manifestação do destinatário só existe para NF-e.',
             $document->situacao === Situacao::Cancelada => 'A NF-e está cancelada.',
             (bool) $status?->isConclusive() => 'A manifestação desta NF-e já foi concluída.',
             $tipo === TipoEvento::CienciaOperacao && $status === ManifestacaoStatus::Ciencia => 'A Ciência da Operação já foi registrada.',

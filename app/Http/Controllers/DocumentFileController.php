@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\DocumentoTipo;
 use App\Models\DfeDocument;
 use App\Services\Documents\DanfeRenderer;
 use App\Services\Sefaz\XmlStorage;
@@ -19,7 +20,7 @@ class DocumentFileController extends Controller
         $content = $path ? $storage->get($path) : null;
         abort_if($content === null, 404);
 
-        $suffix = $document->tem_xml_completo ? 'procNFe' : 'resNFe';
+        $suffix = $document->tem_xml_completo ? $document->schema->value : 'resNFe';
 
         return response($content, 200, [
             'Content-Type' => 'application/xml',
@@ -39,7 +40,7 @@ class DocumentFileController extends Controller
 
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => "inline; filename=\"{$document->chave}-danfe.pdf\"",
+            'Content-Disposition' => "inline; filename=\"{$document->chave}-".($document->tipo === DocumentoTipo::Cte ? 'dacte' : 'danfe').'.pdf"',
         ]);
     }
 }

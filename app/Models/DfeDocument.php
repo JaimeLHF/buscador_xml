@@ -82,7 +82,8 @@ class DfeDocument extends Model
      */
     public function scopeConfirmaveisEmLote(Builder $query): void
     {
-        $query->where('tem_xml_completo', false)
+        $query->where('tipo', DocumentoTipo::Nfe)
+            ->where('tem_xml_completo', false)
             ->where('situacao', '!=', Situacao::Cancelada->value)
             ->where('data_emissao', '>', now()->subDays(config('sefaz.confirmacao_prazo_dias'))->addHour())
             ->where(fn (Builder $q) => $q->whereNull('manifestacao_status')
