@@ -26,6 +26,9 @@
                 <flux:menu.item :href="route('organizations.audit')" icon="shield-check" wire:navigate>
                     {{ __('Auditoria') }}
                 </flux:menu.item>
+                <flux:menu.item :href="route('organizations.integrations')" icon="puzzle-piece" wire:navigate>
+                    {{ __('Integrações') }}
+                </flux:menu.item>
             @endif
             <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
                 {{ __('Settings') }}

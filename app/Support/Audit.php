@@ -19,7 +19,8 @@ final class Audit
             'dfe_document_id' => $document?->id,
             'acao' => $acao,
             'descricao' => $descricao,
-            'dados' => $dados ?: null,
+            // Chamadas pela API não têm usuário: o nome do token identifica quem foi.
+            'dados' => [...$dados, ...array_filter(['token' => request()->attributes->get('api_token')?->name])] ?: null,
             'ip' => request()->ip(),
         ]);
     }

@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use App\Enums\OrganizationRole;
+use Carbon\CarbonImmutable;
 use Database\Factories\OrganizationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,12 +16,25 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * @property int $id
  * @property string $name
+ * @property string|null $webhook_url
+ * @property string|null $webhook_secret
+ * @property string|null $webhook_ultimo_status
+ * @property CarbonImmutable|null $webhook_ultimo_envio_at
  */
-#[Fillable(['name'])]
+#[Fillable(['name', 'webhook_url', 'webhook_secret', 'webhook_ultimo_status', 'webhook_ultimo_envio_at'])]
+#[Hidden(['webhook_secret'])]
 class Organization extends Model
 {
     /** @use HasFactory<OrganizationFactory> */
     use HasFactory;
+
+    protected function casts(): array
+    {
+        return [
+            'webhook_secret' => 'encrypted',
+            'webhook_ultimo_envio_at' => 'datetime',
+        ];
+    }
 
     /** @return BelongsToMany<User, $this, Membership> */
     public function users(): BelongsToMany
@@ -40,6 +55,12 @@ class Organization extends Model
     public function invitations(): HasMany
     {
         return $this->hasMany(OrganizationInvitation::class);
+    }
+
+    /** @return HasMany<ApiToken, $this> */
+    public function apiTokens(): HasMany
+    {
+        return $this->hasMany(ApiToken::class);
     }
 
     /** @return HasMany<Export, $this> */
