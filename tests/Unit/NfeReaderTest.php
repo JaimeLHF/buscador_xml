@@ -27,3 +27,18 @@ it('reads the summary of a resNFe', function () {
 it('rejects anything that is not an NF-e', function () {
     (new NfeReader('<foo/>'))->read();
 })->throws(RuntimeException::class);
+
+it('reads a CT-e with parties, freight values, cargo and transported NF-e', function () {
+    $cte = (new NfeReader(F::file('procCTe.xml')))->read();
+
+    expect($cte['tipo'])->toBe('cte')
+        ->and($cte['ide'])->toMatchArray(['Número' => '456', 'Modal' => 'Rodoviário', 'Tipo de serviço' => 'Normal', 'Origem' => 'FLORIANOPOLIS/SC', 'Destino' => 'SAO PAULO/SP', 'Tomador do serviço' => 'Destinatário'])
+        ->and(array_keys($cte['partes']))->toBe(['Emitente (transportadora)', 'Remetente', 'Destinatário'])
+        ->and($cte['valores']['total'])->toBe('350.00')
+        ->and($cte['valores']['componentes'])->toHaveCount(2)
+        ->and($cte['icms']['Valor do ICMS'])->toBe('42.00')
+        ->and($cte['carga']['dados']['Produto predominante'])->toBe('MOVEIS')
+        ->and($cte['nfes'])->toBe(['42261011222333000181550010000001231123456788'])
+        ->and($cte['modal']['RNTRC'])->toBe('12345678')
+        ->and($cte['protocolo']['Protocolo'])->toBe('342260000012345');
+});

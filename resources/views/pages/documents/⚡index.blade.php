@@ -26,6 +26,7 @@ new #[Title('Notas recebidas')] class extends Component {
     /** Aba da caixa de entrada: '' (todas), 'sem_xml' ou 'canceladas'. */
     #[Url] public string $aba = '';
     #[Url] public string $q = '';
+    #[Url] public string $tipo = '';
     #[Url] public string $company_id = '';
     #[Url] public string $de = '';
     #[Url] public string $ate = '';
@@ -40,7 +41,7 @@ new #[Title('Notas recebidas')] class extends Component {
     private const LOTE_MAXIMO = 500;
 
     /** Filtros guardados no painel "Filtros"; a busca e as abas ficam sempre à vista. */
-    private const FILTROS_EXTRAS = ['company_id', 'de', 'ate', 'valor_min', 'valor_max', 'manifestacao'];
+    private const FILTROS_EXTRAS = ['tipo', 'company_id', 'de', 'ate', 'valor_min', 'valor_max', 'manifestacao'];
 
     public function updated(string $property): void
     {
@@ -285,7 +286,7 @@ new #[Title('Notas recebidas')] class extends Component {
     {{-- Busca única + filtros extras numa gaveta. --}}
     <div class="flex gap-2">
         <div class="min-w-0 flex-1">
-            <flux:input wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Fornecedor, CNPJ ou chave de acesso')" :aria-label="__('Buscar notas')" clearable />
+            <flux:input wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Fornecedor, transportadora, CNPJ ou chave')" :aria-label="__('Buscar notas')" clearable />
         </div>
         <flux:modal.trigger name="filtros">
             <flux:button icon="adjustments-horizontal">
@@ -386,6 +387,9 @@ new #[Title('Notas recebidas')] class extends Component {
                                 <div class="min-w-0">
                                     {{-- O link cobre a linha toda: clicar em qualquer ponto abre a nota. --}}
                                     <a href="{{ route('documents.show', $doc) }}" wire:navigate class="block truncate font-medium text-zinc-900 after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-zinc-400 focus-visible:after:ring-inset dark:text-white">
+                                        @if ($doc->tipo === App\Enums\DocumentoTipo::Cte)
+                                            <span class="me-1.5 inline-block border border-zinc-300 px-1 py-px align-[1px] text-[10px] font-semibold tracking-wide text-zinc-600 dark:border-zinc-600 dark:text-zinc-300">CT-e</span>
+                                        @endif
                                         {{ $doc->emitente_nome ?? __('Fornecedor não informado') }}
                                     </a>
                                     @if ($this->companies->count() > 1)
@@ -446,6 +450,13 @@ new #[Title('Notas recebidas')] class extends Component {
     <flux:modal name="filtros" variant="flyout" class="w-full max-w-sm">
         <div class="space-y-6">
             <flux:heading size="lg" level="2">{{ __('Filtros') }}</flux:heading>
+
+            <flux:select wire:model.live="tipo" :label="__('Tipo de documento')">
+                <flux:select.option value="">{{ __('NF-e e CT-e') }}</flux:select.option>
+                @foreach (App\Enums\DocumentoTipo::cases() as $t)
+                    <flux:select.option :value="$t->value">{{ $t->label() }}</flux:select.option>
+                @endforeach
+            </flux:select>
 
             @if ($this->companies->count() > 1)
                 <flux:select wire:model.live="company_id" :label="__('Empresa')">

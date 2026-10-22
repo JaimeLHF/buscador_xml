@@ -8,6 +8,7 @@ use App\Enums\Situacao;
 use App\Enums\TipoEvento;
 use App\Jobs\SyncCompanyDfe;
 use App\Models\Company;
+use App\Models\User;
 use App\Services\Sefaz\DistribuicaoService;
 use App\Services\Sefaz\Exceptions\ManifestacaoException;
 use App\Services\Sefaz\ManifestacaoService;
@@ -69,6 +70,7 @@ it('keeps CT-e waits and locks independent from NF-e', function () {
 
 it('dispatches one job per due company and document type', function () {
     Queue::fake();
+    $this->travel(1)->minutes(); // o certificado de teste nasce válido a partir de "agora"
     app(StoreCompanyCertificate::class)->handle($this->company, TestCertificate::pfx(), '1234');
 
     $this->artisan('sefaz:dispatch-due')->assertSuccessful();
@@ -84,4 +86,27 @@ it('never offers recipient manifestation for CT-e', function () {
 
     expect(app(ManifestacaoService::class)->disponiveis($cte))->toBe([])
         ->and(fn () => app(ManifestacaoService::class)->manifestar($cte, TipoEvento::ConfirmacaoOperacao))->toThrow(ManifestacaoException::class, 'só existe para NF-e');
+});
+
+it('lists CT-e in the inbox and shows the freight details', function () {
+    $user = User::factory()->withOrganization()->create();
+    $this->company->forceFill(['organization_id' => $user->current_organization_id])->save();
+    fakeSefaz()->push(F::ret138('000000000000001', '000000000000001', [F::doc('000000000000001', 'procCTe.xml', 'procCTe_v4.00.xsd')]));
+    $this->service->sync($this->company, DocumentoTipo::Cte);
+    $cte = $this->company->documents()->sole();
+
+    Livewire\Livewire::actingAs($user)->test('pages::documents.index')
+        ->assertSee('TRANSPORTADORA EXEMPLO LTDA')
+        ->assertSee('CT-e')
+        ->set('tipo', 'nfe')
+        ->assertSet('documents.total', 0);
+
+    Livewire\Livewire::actingAs($user)->test('pages::documents.show', ['document' => $cte])
+        ->assertSee('CT-e nº 456, série 1')
+        ->assertSee('FLORIANOPOLIS/SC → SAO PAULO/SP')
+        ->assertSee('REMETENTE INDUSTRIA SA')
+        ->assertSee('PEDAGIO')
+        ->assertSee('42261011222333000181550010000001231123456788')
+        ->assertSee('DACTE')
+        ->assertDontSee('Manifestação do destinatário');
 });
