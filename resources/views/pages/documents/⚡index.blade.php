@@ -11,6 +11,7 @@ use App\Queries\DocumentFilter;
 use App\Support\Fmt;
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\Computed;
@@ -132,6 +133,35 @@ new #[Title('Notas recebidas')] class extends Component {
             ->orderByDesc('data_emissao')
             ->orderByDesc('id')
             ->paginate(25);
+    }
+
+    /** Data de emissão no fuso de Brasília, para agrupar a lista por dia. */
+    private const DIA_SQL = "date(data_emissao at time zone 'UTC' at time zone 'America/Sao_Paulo')";
+
+    /**
+     * Quantidade e soma de cada dia que aparece na página, contando todas as notas do dia (não só as desta página).
+     *
+     * @return array<string, array{n: int, total: float}>
+     */
+    #[Computed]
+    public function resumoDias(): array
+    {
+        $dias = $this->documents->getCollection()
+            ->map(fn (DfeDocument $d) => $d->data_emissao?->timezone(Fmt::TIMEZONE)->toDateString())
+            ->filter()->unique()->values()->all();
+
+        if ($dias === []) {
+            return [];
+        }
+
+        return DocumentFilter::apply(Auth::user()->currentOrganization, $this->filters())
+            ->toBase()
+            ->selectRaw(self::DIA_SQL.' as dia, count(*) as n, coalesce(sum(valor_total), 0) as total')
+            ->whereIn(DB::raw(self::DIA_SQL), $dias)
+            ->groupBy('dia')
+            ->get()
+            ->mapWithKeys(fn ($r) => [(string) $r->dia => ['n' => (int) $r->n, 'total' => (float) $r->total]])
+            ->all();
     }
 
     #[Computed]
@@ -299,81 +329,116 @@ new #[Title('Notas recebidas')] class extends Component {
         @endif
     @endif
 
-    {{-- Lista estilo caixa de entrada: fornecedor e estado em palavras, ações na própria linha. --}}
-    <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700" wire:loading.class="opacity-60" wire:target="q,aba,company_id,de,ate,valor_min,valor_max,manifestacao,gotoPage,nextPage,previousPage">
-        <ul role="list" class="divide-y divide-zinc-200 dark:divide-zinc-700">
-            @forelse ($this->documents as $doc)
-                @php
-                    $estado = $doc->estado();
-                    $marcavel = $aba === 'sem_xml' && in_array($doc->id, $this->confirmaveisNaPagina, true);
-                @endphp
-                <li wire:key="doc-{{ $doc->id }}" class="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/40">
-                    @if ($marcavel)
-                        <label class="-m-3 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center">
-                            <input type="checkbox" wire:model.live="selecionados" value="{{ $doc->id }}" aria-label="{{ __('Marcar nota de :emitente', ['emitente' => $doc->emitente_nome ?? $doc->chave]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
-                        </label>
+    {{-- Lista em grade densa, agrupada por dia de emissão (com quantidade e total do dia), no estilo de painéis de dados. --}}
+    @php
+        $grade = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 md:grid-cols-[minmax(0,1fr)_10rem_8rem_8.5rem_5.5rem]';
+        $estados = [
+            'pronto' => ['XML pronto', 'bg-emerald-500', 'text-emerald-700 dark:text-emerald-400'],
+            'aguardando' => ['XML a caminho', 'bg-sky-500', 'text-sky-700 dark:text-sky-400'],
+            'resumo' => ['Só resumo', 'bg-zinc-400', 'text-zinc-500 dark:text-zinc-400'],
+            'cancelada' => ['Cancelada', 'bg-red-500', 'text-red-700 dark:text-red-400'],
+        ];
+    @endphp
+
+    <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="q,aba,company_id,de,ate,valor_min,valor_max,manifestacao,gotoPage,nextPage,previousPage">
+        <div class="{{ $grade }} border-b border-zinc-200 px-4 py-2 text-xs font-medium tracking-wide text-zinc-500 uppercase max-md:hidden dark:border-zinc-700 dark:text-zinc-400" aria-hidden="true">
+            <span>{{ __('Fornecedor') }}</span>
+            <span>{{ __('CNPJ') }}</span>
+            <span class="text-end">{{ __('Valor') }}</span>
+            <span>{{ __('Estado') }}</span>
+            <span class="text-end">{{ __('Arquivos') }}</span>
+        </div>
+
+        @forelse ($this->documents->getCollection()->groupBy(fn ($d) => $d->data_emissao?->timezone(Fmt::TIMEZONE)->toDateString() ?? '') as $dia => $docs)
+            @php
+                $resumo = $this->resumoDias[$dia] ?? null;
+                $data = $dia ? Carbon\CarbonImmutable::parse($dia, Fmt::TIMEZONE) : null;
+                $rotulo = match (true) {
+                    $data === null => __('Sem data'),
+                    $data->isToday() => __('Hoje'),
+                    $data->isYesterday() => __('Ontem'),
+                    default => ucfirst($data->locale('pt_BR')->translatedFormat('l, d/m')),
+                };
+            @endphp
+            <section wire:key="dia-{{ $dia }}" aria-label="{{ $rotulo }}">
+                <div class="sticky top-0 z-10 flex items-baseline justify-between gap-4 border-b border-zinc-200 bg-zinc-50 px-4 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                    <span class="font-semibold text-zinc-700 dark:text-zinc-200">{{ $rotulo }}</span>
+                    @if ($resumo)
+                        <span class="tabular-nums text-zinc-500 dark:text-zinc-400">
+                            {{ trans_choice(':n nota|:n notas', $resumo['n'], ['n' => $resumo['n']]) }} · {{ Fmt::money($resumo['total']) }}
+                        </span>
                     @endif
+                </div>
 
-                    <div class="min-w-0 flex-1">
-                        <a href="{{ route('documents.show', $doc) }}" wire:navigate class="line-clamp-2 font-medium text-zinc-900 hover:underline sm:line-clamp-1 dark:text-white">
-                            {{ $doc->emitente_nome ?? __('Fornecedor não informado') }}
-                        </a>
-                        <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-zinc-500 dark:text-zinc-400">
-                            <span class="tabular-nums">{{ Fmt::date($doc->data_emissao) }}</span>
-                            <span aria-hidden="true" class="max-sm:hidden">·</span>
-                            <span class="tabular-nums max-sm:hidden">{{ Fmt::cnpj($doc->emitente_cnpj) }}</span>
-                            @if ($this->companies->count() > 1)
-                                <span aria-hidden="true">·</span>
-                                <span class="truncate">{{ __('para :empresa', ['empresa' => $doc->company->nome_fantasia ?: $doc->company->razao_social]) }}</span>
-                            @endif
-                        </div>
-                    </div>
+                <ul role="list" class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                    @foreach ($docs as $doc)
+                        @php
+                            [$estadoTexto, $estadoPonto, $estadoCor] = $estados[$doc->estado()];
+                            $marcavel = $aba === 'sem_xml' && in_array($doc->id, $this->confirmaveisNaPagina, true);
+                        @endphp
+                        <li wire:key="doc-{{ $doc->id }}" class="group relative {{ $grade }} px-4 py-2.5 transition-colors hover:bg-zinc-50 dark:hover:bg-white/[0.03]">
+                            <div class="flex min-w-0 items-center gap-3">
+                                @if ($marcavel)
+                                    <label class="relative z-10 -my-3 -ms-3 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                                        <input type="checkbox" wire:model.live="selecionados" value="{{ $doc->id }}" aria-label="{{ __('Marcar nota de :emitente', ['emitente' => $doc->emitente_nome ?? $doc->chave]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
+                                    </label>
+                                @endif
+                                <div class="min-w-0">
+                                    {{-- O link cobre a linha toda: clicar em qualquer ponto abre a nota. --}}
+                                    <a href="{{ route('documents.show', $doc) }}" wire:navigate class="block truncate font-medium text-zinc-900 after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-zinc-400 focus-visible:after:ring-inset dark:text-white">
+                                        {{ $doc->emitente_nome ?? __('Fornecedor não informado') }}
+                                    </a>
+                                    @if ($this->companies->count() > 1)
+                                        <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">{{ __('para :empresa', ['empresa' => $doc->company->nome_fantasia ?: $doc->company->razao_social]) }}</p>
+                                    @endif
+                                    <p class="mt-0.5 flex items-center gap-1.5 text-xs md:hidden {{ $estadoCor }}">
+                                        <span class="size-1.5 shrink-0 rounded-full {{ $estadoPonto }}" aria-hidden="true"></span>{{ __($estadoTexto) }}
+                                    </p>
+                                </div>
+                            </div>
 
-                    <div class="flex shrink-0 flex-col items-end gap-1">
-                        <span class="font-medium tabular-nums text-zinc-900 dark:text-white">{{ Fmt::money($doc->valor_total) }}</span>
-                        @switch($estado)
-                            @case('pronto')
-                                <flux:badge size="sm" color="green" icon="check">{{ __('XML pronto') }}</flux:badge>
-                                @break
-                            @case('aguardando')
-                                <flux:badge size="sm" color="sky" icon="clock">{{ __('XML a caminho') }}</flux:badge>
-                                @break
-                            @case('cancelada')
-                                <flux:badge size="sm" color="red" icon="x-mark">{{ __('Cancelada') }}</flux:badge>
-                                @break
-                            @default
-                                <flux:badge size="sm" color="zinc">{{ __('Só resumo') }}</flux:badge>
-                        @endswitch
-                    </div>
+                            <span class="text-sm tabular-nums text-zinc-500 max-md:hidden dark:text-zinc-400">{{ Fmt::cnpj($doc->emitente_cnpj) }}</span>
 
-                    <div class="hidden w-40 shrink-0 justify-end gap-1 md:flex">
-                        @if ($doc->tem_xml_completo)
-                            <flux:button size="sm" variant="ghost" icon="code-bracket" :href="route('documents.xml', $doc)" :aria-label="__('Baixar XML')">{{ __('XML') }}</flux:button>
-                            <flux:button size="sm" variant="ghost" icon="document" :href="route('documents.danfe', $doc)" target="_blank" :aria-label="__('Abrir DANFE')">{{ __('DANFE') }}</flux:button>
-                        @else
-                            <flux:button size="sm" variant="ghost" :href="route('documents.show', $doc)" wire:navigate>{{ __('Detalhes') }}</flux:button>
-                        @endif
-                    </div>
-                </li>
-            @empty
-                <li class="px-4 py-12 text-center">
-                    <flux:heading>
-                        @if ($q !== '' || $this->filtrosAtivos)
-                            {{ __('Nenhuma nota encontrada com essa busca.') }}
-                        @elseif ($aba === 'sem_xml')
-                            {{ __('Tudo certo: todas as notas já têm XML.') }}
-                        @elseif ($aba === 'canceladas')
-                            {{ __('Nenhuma nota cancelada.') }}
-                        @else
-                            {{ __('Nenhuma nota recebida ainda.') }}
-                        @endif
-                    </flux:heading>
+                            <span class="text-end text-sm font-medium tabular-nums text-zinc-900 dark:text-white">{{ Fmt::money($doc->valor_total) }}</span>
+
+                            <span class="flex items-center gap-2 text-sm max-md:hidden {{ $estadoCor }}">
+                                <span class="size-2 shrink-0 rounded-full {{ $estadoPonto }}" aria-hidden="true"></span>{{ __($estadoTexto) }}
+                            </span>
+
+                            <div class="relative z-10 flex justify-end gap-0.5 max-md:hidden">
+                                @if ($doc->tem_xml_completo)
+                                    <flux:tooltip :content="__('Baixar XML')">
+                                        <flux:button size="sm" variant="subtle" square icon="code-bracket" :href="route('documents.xml', $doc)" :aria-label="__('Baixar XML de :emitente', ['emitente' => $doc->emitente_nome])" />
+                                    </flux:tooltip>
+                                    <flux:tooltip :content="__('Abrir DANFE')">
+                                        <flux:button size="sm" variant="subtle" square icon="document-text" :href="route('documents.danfe', $doc)" target="_blank" :aria-label="__('Abrir DANFE de :emitente', ['emitente' => $doc->emitente_nome])" />
+                                    </flux:tooltip>
+                                @else
+                                    <flux:text size="sm" class="pe-2 text-zinc-400 dark:text-zinc-500">—</flux:text>
+                                @endif
+                            </div>
+                        </li>
+                    @endforeach
+                </ul>
+            </section>
+        @empty
+            <div class="px-4 py-12 text-center">
+                <flux:heading>
                     @if ($q !== '' || $this->filtrosAtivos)
-                        <flux:button size="sm" variant="ghost" class="mt-2" wire:click="$set('q', ''); limparFiltros()">{{ __('Limpar busca e filtros') }}</flux:button>
+                        {{ __('Nenhuma nota encontrada com essa busca.') }}
+                    @elseif ($aba === 'sem_xml')
+                        {{ __('Tudo certo: todas as notas já têm XML.') }}
+                    @elseif ($aba === 'canceladas')
+                        {{ __('Nenhuma nota cancelada.') }}
+                    @else
+                        {{ __('Nenhuma nota recebida ainda.') }}
                     @endif
-                </li>
-            @endforelse
-        </ul>
+                </flux:heading>
+                @if ($q !== '' || $this->filtrosAtivos)
+                    <flux:button size="sm" variant="ghost" class="mt-2" wire:click="$set('q', ''); limparFiltros()">{{ __('Limpar busca e filtros') }}</flux:button>
+                @endif
+            </div>
+        @endforelse
     </div>
 
     <flux:pagination :paginator="$this->documents" />
