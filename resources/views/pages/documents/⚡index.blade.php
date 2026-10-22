@@ -1,8 +1,10 @@
 <?php
 
+use App\Enums\ExportFormato;
 use App\Enums\ExportStatus;
 use App\Enums\ManifestacaoStatus;
 use App\Enums\Situacao;
+use App\Jobs\BuildCsvReport;
 use App\Jobs\BuildXmlExport;
 use App\Jobs\SendConfirmacaoOperacao;
 use App\Models\DfeDocument;
@@ -231,8 +233,9 @@ new #[Title('Notas recebidas')] class extends Component {
             : Flux::toast(variant: 'success', text: __(':n Confirmações enviadas para a fila. O XML completo chega em seguida.', ['n' => $documents->count()]));
     }
 
-    public function exportar(): void
+    public function exportar(string $formato = 'zip'): void
     {
+        $formato = ExportFormato::tryFrom($formato) ?? ExportFormato::Zip;
         $key = 'export:'.Auth::id();
 
         if (RateLimiter::tooManyAttempts($key, 5)) {
@@ -246,10 +249,11 @@ new #[Title('Notas recebidas')] class extends Component {
         $export = Auth::user()->currentOrganization->exports()->create([
             'user_id' => Auth::id(),
             'filters' => $this->filters(),
+            'formato' => $formato,
             'status' => ExportStatus::Pending,
         ]);
 
-        BuildXmlExport::dispatch($export);
+        $formato === ExportFormato::Csv ? BuildCsvReport::dispatch($export) : BuildXmlExport::dispatch($export);
 
         $this->redirectRoute('exports.index', navigate: true);
     }
@@ -268,9 +272,14 @@ new #[Title('Notas recebidas')] class extends Component {
             </flux:text>
         </div>
 
-        <flux:button icon="arrow-down-tray" wire:click="exportar" wire:confirm="{{ __('Gerar um arquivo ZIP com os XMLs das :n notas desta lista?', ['n' => $this->documents->total()]) }}">
-            {{ __('Baixar XMLs') }}
-        </flux:button>
+        <div class="flex flex-wrap gap-2">
+            <flux:button icon="table-cells" wire:click="exportar('csv')" wire:confirm="{{ __('Gerar uma planilha com as :n notas desta lista?', ['n' => $this->documents->total()]) }}">
+                {{ __('Baixar planilha') }}
+            </flux:button>
+            <flux:button icon="arrow-down-tray" wire:click="exportar('zip')" wire:confirm="{{ __('Gerar um arquivo ZIP com os XMLs das :n notas desta lista?', ['n' => $this->documents->total()]) }}">
+                {{ __('Baixar XMLs') }}
+            </flux:button>
+        </div>
     </div>
 
     @foreach ($this->alertas as $alerta)

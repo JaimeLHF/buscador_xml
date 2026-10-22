@@ -1,9 +1,11 @@
 <?php
 
 use App\Enums\DfeSchema;
+use App\Enums\ExportFormato;
 use App\Enums\ExportStatus;
 use App\Enums\OrganizationRole;
 use App\Enums\Situacao;
+use App\Jobs\BuildCsvReport;
 use App\Jobs\BuildXmlExport;
 use App\Models\Company;
 use App\Models\DfeDocument;
@@ -118,6 +120,32 @@ it('queues a ZIP export with the current filters and builds it', function () {
     unlink($tmp);
 
     $this->actingAs($this->user)->get(route('exports.download', $export))->assertOk()->assertDownload();
+});
+
+it('builds a spreadsheet of the filtered notes that Excel opens without mangling keys or formulas', function () {
+    Queue::fake();
+    makeDoc($this->company, ['emitente_nome' => '=HYPERLINK("http://x")', 'valor_total' => 1234.5, 'situacao' => Situacao::Cancelada]);
+
+    Livewire::actingAs($this->user)->test('pages::documents.index')
+        ->call('exportar', 'csv')
+        ->assertRedirect(route('exports.index'));
+
+    $export = Export::sole();
+    Queue::assertPushed(BuildCsvReport::class);
+    (new BuildCsvReport($export))->handle();
+
+    $csv = Storage::disk('local')->get($export->refresh()->path);
+    $linhas = explode("\n", trim($csv));
+
+    expect($export)->formato->toBe(ExportFormato::Csv)->total->toBe(2)
+        ->and($csv)->toStartWith("\u{FEFF}Tipo;")
+        ->and($linhas)->toHaveCount(3)
+        ->and($csv)->toContain('"=""'.$this->document->chave.'"""')
+        ->toContain("'=HYPERLINK")
+        ->toContain('1234,50')
+        ->toContain('Cancelada');
+
+    $this->actingAs($this->user)->get(route('exports.download', $export))->assertOk()->assertDownload('notas-'.$export->created_at->format('Ymd-His').'.csv');
 });
 
 it('only lets the requester download an export', function () {
