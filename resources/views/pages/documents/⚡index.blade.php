@@ -254,14 +254,14 @@ new #[Title('Documentos')] class extends Component {
             @if ($this->podeManifestar)
                 <flux:table.column class="w-8"></flux:table.column>
             @endif
-            <flux:table.column>{{ __('Emissão') }}</flux:table.column>
+            <flux:table.column class="max-sm:hidden">{{ __('Emissão') }}</flux:table.column>
             <flux:table.column>{{ __('Emitente') }}</flux:table.column>
             @if ($this->companies->count() > 1)
                 <flux:table.column class="max-md:hidden">{{ __('Destinatário') }}</flux:table.column>
             @endif
-            <flux:table.column align="end">{{ __('Valor') }}</flux:table.column>
+            <flux:table.column align="end" class="max-sm:hidden">{{ __('Valor') }}</flux:table.column>
             <flux:table.column>{{ __('Situação') }}</flux:table.column>
-            <flux:table.column>{{ __('Manifestação') }}</flux:table.column>
+            <flux:table.column class="max-sm:hidden">{{ __('Manifestação') }}</flux:table.column>
         </flux:table.columns>
         <flux:table.rows>
             @forelse ($this->documents as $doc)
@@ -276,22 +276,24 @@ new #[Title('Documentos')] class extends Component {
                             @endif
                         </flux:table.cell>
                     @endif
-                    <flux:table.cell class="whitespace-nowrap">{{ Fmt::date($doc->data_emissao) }}</flux:table.cell>
-                    <flux:table.cell>
+                    <flux:table.cell class="whitespace-nowrap max-sm:hidden">{{ Fmt::date($doc->data_emissao) }}</flux:table.cell>
+                    <flux:table.cell class="max-sm:whitespace-normal">
                         <flux:link :href="route('documents.show', $doc)" wire:navigate>{{ $doc->emitente_nome ?? $doc->chave }}</flux:link>
                         <flux:text size="sm" class="font-mono">{{ Fmt::cnpj($doc->emitente_cnpj) }}</flux:text>
+                        {{-- No celular, data e valor descem para baixo do emitente em vez de exigir rolagem lateral. --}}
+                        <flux:text size="sm" class="mt-1 tabular-nums sm:hidden">{{ Fmt::date($doc->data_emissao) }} · {{ Fmt::money($doc->valor_total) }}</flux:text>
                     </flux:table.cell>
                     @if ($this->companies->count() > 1)
                         <flux:table.cell class="max-md:hidden">{{ $doc->company->razao_social }}</flux:table.cell>
                     @endif
-                    <flux:table.cell align="end" class="tabular-nums whitespace-nowrap">{{ Fmt::money($doc->valor_total) }}</flux:table.cell>
+                    <flux:table.cell align="end" class="tabular-nums whitespace-nowrap max-sm:hidden">{{ Fmt::money($doc->valor_total) }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:badge size="sm" :color="match ($doc->situacao) { Situacao::Autorizada => 'green', Situacao::Cancelada => 'red', default => 'amber' }">{{ $doc->situacao->label() }}</flux:badge>
                         @unless ($doc->tem_xml_completo)
                             <flux:badge size="sm" color="zinc">{{ __('resumo') }}</flux:badge>
                         @endunless
                     </flux:table.cell>
-                    <flux:table.cell>{{ $doc->manifestacao_status?->label() ?? '—' }}</flux:table.cell>
+                    <flux:table.cell class="max-sm:hidden">{{ $doc->manifestacao_status?->label() ?? '—' }}</flux:table.cell>
                 </flux:table.row>
             @empty
                 <flux:table.row>
