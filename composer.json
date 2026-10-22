@@ -21,7 +21,8 @@
         "nfephp-org/sped-common": "^5.1",
         "nfephp-org/sped-cte": "^5.0",
         "nfephp-org/sped-da": "^1.1",
-        "nfephp-org/sped-nfe": "^5.2"
+        "nfephp-org/sped-nfe": "^5.2",
+        "predis/predis": "^3.7"
     },
     "require-dev": {
         "fakerphp/faker": "^1.24",
