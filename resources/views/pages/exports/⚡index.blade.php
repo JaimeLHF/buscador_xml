@@ -23,20 +23,22 @@ new #[Title('Downloads')] class extends Component {
 <section class="w-full space-y-6" @if ($this->pending) wire:poll.3s @endif>
     <div>
         <flux:heading size="xl" level="1">{{ __('Downloads') }}</flux:heading>
-        <flux:subheading>{{ __('Arquivos ZIP gerados pelo botão "Baixar XMLs" da tela de notas. Ficam disponíveis por 7 dias.') }}</flux:subheading>
+        <flux:subheading>{{ __('Arquivos gerados pelos botões "Baixar XMLs" e "Baixar planilha" da tela de notas. Ficam disponíveis por 7 dias.') }}</flux:subheading>
     </div>
 
     <flux:table>
         <flux:table.columns>
             <flux:table.column>{{ __('Pedido em') }}</flux:table.column>
+            <flux:table.column>{{ __('Arquivo') }}</flux:table.column>
             <flux:table.column>{{ __('Status') }}</flux:table.column>
-            <flux:table.column align="end">{{ __('XMLs') }}</flux:table.column>
+            <flux:table.column align="end">{{ __('Notas') }}</flux:table.column>
             <flux:table.column></flux:table.column>
         </flux:table.columns>
         <flux:table.rows>
             @forelse ($this->exports as $export)
                 <flux:table.row :key="$export->id">
                     <flux:table.cell>{{ Fmt::dateTime($export->created_at) }}</flux:table.cell>
+                    <flux:table.cell>{{ $export->formato->label() }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:badge size="sm" :color="match ($export->status) { App\Enums\ExportStatus::Done => 'green', App\Enums\ExportStatus::Failed => 'red', default => 'amber' }">{{ $export->status->label() }}</flux:badge>
                         @if ($export->error) <flux:text size="sm">{{ $export->error }}</flux:text> @endif
@@ -52,7 +54,7 @@ new #[Title('Downloads')] class extends Component {
                 </flux:table.row>
             @empty
                 <flux:table.row>
-                    <flux:table.cell colspan="4" class="text-center">{{ __('Nenhum download ainda. Na tela de notas, filtre o que precisa e clique em "Baixar XMLs".') }}</flux:table.cell>
+                    <flux:table.cell colspan="5" class="text-center">{{ __('Nenhum download ainda. Na tela de notas, filtre o que precisa e clique em "Baixar XMLs" ou "Baixar planilha".') }}</flux:table.cell>
                 </flux:table.row>
             @endforelse
         </flux:table.rows>
