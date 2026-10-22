@@ -192,12 +192,14 @@ new #[Title('Documentos')] class extends Component {
         </div>
 
         <div id="filtros-extras" class="contents max-sm:hidden" x-bind:class="{ 'max-sm:hidden': ! abertos }">
+            @if ($this->companies->count() > 1)
             <flux:select wire:model.live="company_id" :label="__('Empresa')">
                 <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
                 @foreach ($this->companies as $c)
                     <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
                 @endforeach
             </flux:select>
+            @endif
             <flux:input type="date" wire:model.live="de" :label="__('Emissão de')" />
             <flux:input type="date" wire:model.live="ate" :label="__('Emissão até')" />
             <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_min" :label="__('Valor mínimo')" />
@@ -254,7 +256,9 @@ new #[Title('Documentos')] class extends Component {
             @endif
             <flux:table.column>{{ __('Emissão') }}</flux:table.column>
             <flux:table.column>{{ __('Emitente') }}</flux:table.column>
-            <flux:table.column class="max-md:hidden">{{ __('Destinatário') }}</flux:table.column>
+            @if ($this->companies->count() > 1)
+                <flux:table.column class="max-md:hidden">{{ __('Destinatário') }}</flux:table.column>
+            @endif
             <flux:table.column align="end">{{ __('Valor') }}</flux:table.column>
             <flux:table.column>{{ __('Situação') }}</flux:table.column>
             <flux:table.column>{{ __('Manifestação') }}</flux:table.column>
@@ -277,7 +281,9 @@ new #[Title('Documentos')] class extends Component {
                         <flux:link :href="route('documents.show', $doc)" wire:navigate>{{ $doc->emitente_nome ?? $doc->chave }}</flux:link>
                         <flux:text size="sm" class="font-mono">{{ Fmt::cnpj($doc->emitente_cnpj) }}</flux:text>
                     </flux:table.cell>
-                    <flux:table.cell class="max-md:hidden">{{ $doc->company->razao_social }}</flux:table.cell>
+                    @if ($this->companies->count() > 1)
+                        <flux:table.cell class="max-md:hidden">{{ $doc->company->razao_social }}</flux:table.cell>
+                    @endif
                     <flux:table.cell align="end" class="tabular-nums whitespace-nowrap">{{ Fmt::money($doc->valor_total) }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:badge size="sm" :color="match ($doc->situacao) { Situacao::Autorizada => 'green', Situacao::Cancelada => 'red', default => 'amber' }">{{ $doc->situacao->label() }}</flux:badge>
