@@ -22,7 +22,7 @@ new #[Title('Exportações')] class extends Component {
 
 <section class="w-full space-y-6" @if ($this->pending) wire:poll.3s @endif>
     <div>
-        <flux:heading size="xl">{{ __('Exportações') }}</flux:heading>
+        <flux:heading size="xl" level="1">{{ __('Exportações') }}</flux:heading>
         <flux:subheading>{{ __('Arquivos ZIP ficam disponíveis por 7 dias.') }}</flux:subheading>
     </div>
 

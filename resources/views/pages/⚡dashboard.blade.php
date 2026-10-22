@@ -49,7 +49,7 @@ new #[Title('Dashboard')] class extends Component {
 }; ?>
 
 <section class="w-full space-y-8">
-    <flux:heading size="xl">{{ $this->organization->name }}</flux:heading>
+    <flux:heading size="xl" level="1">{{ $this->organization->name }}</flux:heading>
 
     <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         @foreach ([
@@ -70,7 +70,7 @@ new #[Title('Dashboard')] class extends Component {
     </div>
 
     <div class="space-y-3">
-        <flux:heading size="lg">{{ __('Alertas') }}</flux:heading>
+        <flux:heading size="lg" level="2">{{ __('Alertas') }}</flux:heading>
 
         @forelse ($this->alerts as $alert)
             <flux:callout :variant="$alert->data['level'] ?? 'warning'" icon="bell-alert" wire:key="alert-{{ $alert->id }}">

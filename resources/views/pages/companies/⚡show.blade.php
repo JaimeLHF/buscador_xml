@@ -25,7 +25,7 @@ new #[Title('Empresa')] class extends Component {
 <section class="w-full space-y-8">
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
-            <flux:heading size="xl">{{ $company->razao_social }}</flux:heading>
+            <flux:heading size="xl" level="1">{{ $company->razao_social }}</flux:heading>
             <flux:text class="font-mono">{{ $company->cnpjValue()->formatted() }} · {{ $company->uf->value }} · {{ $company->ambiente->label() }}</flux:text>
         </div>
 
@@ -43,7 +43,7 @@ new #[Title('Empresa')] class extends Component {
 
     <div class="grid gap-6 lg:grid-cols-2">
         <flux:card class="space-y-4">
-            <flux:heading size="lg">{{ __('Certificado digital A1') }}</flux:heading>
+            <flux:heading size="lg" level="2">{{ __('Certificado digital A1') }}</flux:heading>
 
             @if ($cert = $company->activeCertificate)
                 <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
@@ -64,15 +64,13 @@ new #[Title('Empresa')] class extends Component {
                     <flux:input type="file" name="pfx" accept=".pfx,.p12" :label="$cert ? __('Trocar certificado (.pfx)') : __('Arquivo do certificado (.pfx)')" required />
                     <flux:input type="password" name="password" :label="__('Senha do certificado')" required autocomplete="off" viewable />
 
-                    @error('pfx') <flux:text class="text-red-600 dark:text-red-400">{{ $message }}</flux:text> @enderror
-
                     <flux:button type="submit" variant="primary" icon="arrow-up-tray">{{ __('Enviar certificado') }}</flux:button>
                 </form>
             @endcan
         </flux:card>
 
         <flux:card class="space-y-4">
-            <flux:heading size="lg">{{ __('Sincronização') }}</flux:heading>
+            <flux:heading size="lg" level="2">{{ __('Sincronização') }}</flux:heading>
 
             @foreach ($company->syncStates as $state)
                 <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
@@ -94,7 +92,7 @@ new #[Title('Empresa')] class extends Component {
 
     <div class="space-y-3">
         <div class="flex items-center justify-between">
-            <flux:heading size="lg">{{ __('Últimos documentos recebidos') }}</flux:heading>
+            <flux:heading size="lg" level="2">{{ __('Últimos documentos recebidos') }}</flux:heading>
             <flux:link :href="route('documents.index', ['company_id' => $company->id])" wire:navigate>{{ __('Ver todos') }}</flux:link>
         </div>
 

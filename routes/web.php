@@ -7,7 +7,8 @@ use App\Http\Controllers\ExportDownloadController;
 use App\Http\Controllers\SyncNowController;
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'welcome')->name('home');
+// Ferramenta interna: a raiz leva ao painel (ou ao login, via middleware auth).
+Route::redirect('/', '/dashboard')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('organizations/create', 'pages::organizations.create')->name('organizations.create');

@@ -124,7 +124,7 @@ new #[Title('Empresa')] class extends Component {
 }; ?>
 
 <section class="mx-auto w-full max-w-2xl space-y-6">
-    <flux:heading size="xl">{{ $company ? __('Editar empresa') : __('Nova empresa') }}</flux:heading>
+    <flux:heading size="xl" level="1">{{ $company ? __('Editar empresa') : __('Nova empresa') }}</flux:heading>
 
     <form wire:submit="save" class="space-y-6">
         <div class="grid gap-6 sm:grid-cols-2">
