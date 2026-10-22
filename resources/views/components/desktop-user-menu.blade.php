@@ -22,6 +22,11 @@
             <flux:menu.item :href="route('organizations.members')" icon="users" wire:navigate>
                 {{ __('Equipe') }}
             </flux:menu.item>
+            @if (auth()->user()->managesCurrentOrganization())
+                <flux:menu.item :href="route('organizations.audit')" icon="shield-check" wire:navigate>
+                    {{ __('Auditoria') }}
+                </flux:menu.item>
+            @endif
             <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
                 {{ __('Settings') }}
             </flux:menu.item>

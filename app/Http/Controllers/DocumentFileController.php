@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\AuditAcao;
 use App\Enums\DocumentoTipo;
 use App\Models\DfeDocument;
 use App\Services\Documents\DanfeRenderer;
 use App\Services\Sefaz\XmlStorage;
+use App\Support\Audit;
 use Illuminate\Support\Facades\Gate;
 use RuntimeException;
 use Symfony\Component\HttpFoundation\Response;
@@ -21,6 +23,7 @@ class DocumentFileController extends Controller
         abort_if($content === null, 404);
 
         $suffix = $document->tem_xml_completo ? $document->schema->value : 'resNFe';
+        Audit::document(AuditAcao::XmlBaixado, $document);
 
         return response($content, 200, [
             'Content-Type' => 'application/xml',
@@ -37,6 +40,8 @@ class DocumentFileController extends Controller
         } catch (RuntimeException $e) {
             return redirect()->route('documents.show', $document)->with('error', $e->getMessage());
         }
+
+        Audit::document(AuditAcao::DanfeAberto, $document);
 
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',

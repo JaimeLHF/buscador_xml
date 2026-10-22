@@ -19,6 +19,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::redirect('dashboard', '/documents')->name('dashboard');
 
         Route::livewire('organization/members', 'pages::organizations.members')->name('organizations.members');
+        Route::livewire('organization/audit', 'pages::organizations.audit')->name('organizations.audit');
 
         Route::livewire('companies', 'pages::companies.index')->name('companies.index');
         Route::livewire('companies/create', 'pages::companies.form')->name('companies.create');
