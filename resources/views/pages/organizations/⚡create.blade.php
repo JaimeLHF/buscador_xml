@@ -20,7 +20,7 @@ new #[Title('Nova organização')] class extends Component {
 
 <section class="mx-auto w-full max-w-lg space-y-6">
     <div>
-        <flux:heading size="xl">{{ __('Nova organização') }}</flux:heading>
+        <flux:heading size="xl" level="1">{{ __('Nova organização') }}</flux:heading>
         <flux:subheading>{{ __('Escritório ou cliente que agrupa empresas e usuários.') }}</flux:subheading>
     </div>
 

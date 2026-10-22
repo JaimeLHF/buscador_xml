@@ -165,7 +165,7 @@ new #[Title('Documentos')] class extends Component {
 
 <section class="w-full space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-4">
-        <flux:heading size="xl">{{ __('Documentos') }}</flux:heading>
+        <flux:heading size="xl" level="1">{{ __('Documentos') }}</flux:heading>
 
         <flux:button icon="archive-box-arrow-down" wire:click="exportar" wire:confirm="{{ __('Gerar um ZIP com os XMLs de todos os documentos filtrados?') }}">
             {{ __('Exportar XMLs (ZIP)') }}
@@ -244,7 +244,10 @@ new #[Title('Documentos')] class extends Component {
                     @if ($this->podeManifestar)
                         <flux:table.cell>
                             @if (in_array($doc->id, $this->confirmaveisNaPagina, true))
-                                <flux:checkbox wire:model.live="selecionados" :value="$doc->id" :aria-label="__('Selecionar nota')" />
+                                {{-- Rótulo de 44px em volta da caixa: alvo de toque confortável sem alargar a linha. --}}
+                                <label class="-m-3 inline-flex size-11 cursor-pointer items-center justify-center">
+                                    <input type="checkbox" wire:model.live="selecionados" value="{{ $doc->id }}" aria-label="{{ __('Selecionar nota de :emitente', ['emitente' => $doc->emitente_nome ?? $doc->chave]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
+                                </label>
                             @endif
                         </flux:table.cell>
                     @endif
@@ -274,7 +277,7 @@ new #[Title('Documentos')] class extends Component {
     <flux:modal name="confirmar-lote" class="md:w-[32rem]">
         <form wire:submit="confirmarLote" class="space-y-6">
             <div>
-                <flux:heading size="lg">{{ __('Confirmar operação de :count notas', ['count' => count($selecionados)]) }}</flux:heading>
+                <flux:heading size="lg" level="2">{{ __('Confirmar operação de :count notas', ['count' => count($selecionados)]) }}</flux:heading>
                 <flux:text class="mt-2">{{ __('A Confirmação declara à SEFAZ que a compra aconteceu e a mercadoria foi recebida. Cada evento é assinado com o certificado da empresa e não pode ser desfeito.') }}</flux:text>
                 <flux:text class="mt-2">{{ __('Envie apenas notas que a empresa reconhece. Para notas desconhecidas, use a tela da nota.') }}</flux:text>
             </div>

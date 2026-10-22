@@ -43,7 +43,7 @@ new #[Title('Log SEFAZ')] class extends Component {
 }; ?>
 
 <section class="w-full space-y-6">
-    <flux:heading size="xl">{{ __('Log de requisições à SEFAZ') }}</flux:heading>
+    <flux:heading size="xl" level="1">{{ __('Log de requisições à SEFAZ') }}</flux:heading>
 
     <div class="flex flex-wrap items-end gap-4">
         <flux:select wire:model.live="company_id" :label="__('Empresa')" class="max-w-xs">

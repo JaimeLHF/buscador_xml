@@ -78,7 +78,7 @@ new #[Title('Documento')] class extends Component {
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="space-y-1">
             <flux:link :href="route('companies.show', $document->company)" wire:navigate class="text-sm">← {{ $document->company->razao_social }}</flux:link>
-            <flux:heading size="xl">{{ $document->emitente_nome ?? __('NF-e') }}</flux:heading>
+            <flux:heading size="xl" level="1">{{ $document->emitente_nome ?? __('NF-e') }}</flux:heading>
             <flux:text class="font-mono break-all">{{ $document->chave }}</flux:text>
         </div>
 
@@ -113,7 +113,7 @@ new #[Title('Documento')] class extends Component {
         </flux:card>
 
         <flux:card class="space-y-4">
-            <flux:heading size="lg">{{ __('Manifestação do destinatário') }}</flux:heading>
+            <flux:heading size="lg" level="2">{{ __('Manifestação do destinatário') }}</flux:heading>
 
             @forelse ($this->manifestacoes as $tipo)
                 <flux:button wire:click="confirmar('{{ $tipo->value }}')" class="w-full" :variant="$tipo === App\Enums\TipoEvento::CienciaOperacao ? 'primary' : 'filled'">
@@ -126,7 +126,7 @@ new #[Title('Documento')] class extends Component {
     </div>
 
     <div class="space-y-3">
-        <flux:heading size="lg">{{ __('Eventos') }}</flux:heading>
+        <flux:heading size="lg" level="2">{{ __('Eventos') }}</flux:heading>
 
         <flux:table>
             <flux:table.columns>
@@ -156,14 +156,14 @@ new #[Title('Documento')] class extends Component {
         <form wire:submit="manifestar" class="space-y-6">
             @if ($acao)
                 <div>
-                    <flux:heading size="lg">{{ App\Enums\TipoEvento::from($acao)->label() }}</flux:heading>
+                    <flux:heading size="lg" level="2">{{ App\Enums\TipoEvento::from($acao)->label() }}</flux:heading>
                     <flux:text class="mt-2">{{ __('O evento será assinado com o certificado da empresa e enviado à SEFAZ. Não é possível desfazer.') }}</flux:text>
                 </div>
 
                 @if (App\Enums\TipoEvento::from($acao)->exigeJustificativa())
                     <flux:textarea wire:model="justificativa" :label="__('Justificativa')" rows="3" required minlength="15" maxlength="255" />
                 @else
-                    @error('justificativa') <flux:text class="text-red-600 dark:text-red-400">{{ $message }}</flux:text> @enderror
+                    <flux:error name="justificativa" />
                 @endif
             @endif
 

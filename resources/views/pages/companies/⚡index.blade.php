@@ -44,7 +44,7 @@ new #[Title('Empresas')] class extends Component {
 
 <section class="w-full space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-4">
-        <flux:heading size="xl">{{ __('Empresas') }}</flux:heading>
+        <flux:heading size="xl" level="1">{{ __('Empresas') }}</flux:heading>
 
         @can('create', App\Models\Company::class)
             <flux:button variant="primary" icon="plus" :href="route('companies.create')" wire:navigate>

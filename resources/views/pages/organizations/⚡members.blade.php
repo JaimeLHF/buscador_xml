@@ -97,7 +97,7 @@ new #[Title('Membros')] class extends Component {
 }; ?>
 
 <section class="w-full max-w-4xl space-y-8">
-    <flux:heading size="xl">{{ __('Membros de :org', ['org' => $this->organization->name]) }}</flux:heading>
+    <flux:heading size="xl" level="1">{{ __('Membros de :org', ['org' => $this->organization->name]) }}</flux:heading>
 
     <flux:table>
         <flux:table.columns>
@@ -134,7 +134,7 @@ new #[Title('Membros')] class extends Component {
 
     @if ($this->canManage)
         <flux:card class="space-y-4">
-            <flux:heading size="lg">{{ __('Convidar') }}</flux:heading>
+            <flux:heading size="lg" level="2">{{ __('Convidar') }}</flux:heading>
 
             <form wire:submit="invite" class="flex flex-wrap items-end gap-4">
                 <flux:input wire:model="email" type="email" :label="__('E-mail')" required class="min-w-64 flex-1" />
