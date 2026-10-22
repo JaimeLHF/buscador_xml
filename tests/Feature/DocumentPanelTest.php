@@ -131,3 +131,15 @@ it('only lets the requester download an export', function () {
 
     $this->actingAs($colleague)->get(route('exports.download', $export))->assertForbidden();
 });
+
+it('counts the filters hidden behind the mobile toggle', function () {
+    $user = User::factory()->withOrganization()->create();
+
+    Livewire::actingAs($user)->test('pages::documents.index')
+        ->assertSet('filtrosAtivos', 0)
+        ->set('emitente', 'ACME')
+        ->assertSet('filtrosAtivos', 0)
+        ->set('xml', 'resumo')
+        ->set('situacao', 'autorizada')
+        ->assertSet('filtrosAtivos', 2);
+});
