@@ -451,7 +451,17 @@ new #[Title('Nota fiscal')] class extends Component {
                         {{ $tipo->label() }}
                     </flux:button>
                 @empty
-                    <flux:text size="sm">{{ auth()->user()->can('manifest', $document) ? __('Nenhuma manifestação disponível para este documento.') : __('Somente donos e administradores da organização podem manifestar.') }}</flux:text>
+                    <flux:text size="sm">
+                        @if (! auth()->user()->can('manifest', $document))
+                            {{ __('Somente donos e administradores da organização podem manifestar.') }}
+                        @elseif ($document->company->buscaPeloContador() && ! $document->company->activeCertificate)
+                            {{ __('Esta empresa busca notas pelo certificado do contador. Para manifestar, envie também o certificado da própria empresa na página da empresa.') }}
+                        @elseif ($document->emitidaPelaEmpresa())
+                            {{ __('Nota emitida pela própria empresa: a manifestação é feita por quem recebeu.') }}
+                        @else
+                            {{ __('Nenhuma manifestação disponível para este documento.') }}
+                        @endif
+                    </flux:text>
                 @endforelse
             </div>
 

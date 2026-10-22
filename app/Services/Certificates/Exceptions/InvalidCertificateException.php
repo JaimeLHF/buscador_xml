@@ -22,6 +22,11 @@ class InvalidCertificateException extends RuntimeException
         return new self('O certificado não é um e-CNPJ (não contém CNPJ do titular).');
     }
 
+    public static function withoutDocumento(): self
+    {
+        return new self('O certificado não é um e-CNPJ nem um e-CPF (não contém CNPJ nem CPF do titular).');
+    }
+
     public static function expired(): self
     {
         return new self('O certificado está vencido.');

@@ -134,7 +134,7 @@ new #[Title('Notas recebidas')] class extends Component {
     public function documents()
     {
         return DocumentFilter::apply(Auth::user()->currentOrganization, $this->filters())
-            ->with('company:id,razao_social,nome_fantasia')
+            ->with('company:id,razao_social,nome_fantasia,cnpj')
             ->orderByDesc('data_emissao')
             ->orderByDesc('id')
             ->paginate(25);
@@ -402,6 +402,9 @@ new #[Title('Notas recebidas')] class extends Component {
                                     <a href="{{ route('documents.show', $doc) }}" wire:navigate class="block truncate font-medium text-zinc-900 after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-zinc-400 focus-visible:after:ring-inset dark:text-white">
                                         @if ($doc->tipo === App\Enums\DocumentoTipo::Cte)
                                             <span class="me-1.5 inline-block border border-zinc-300 px-1 py-px align-[1px] text-[10px] font-semibold tracking-wide text-zinc-600 dark:border-zinc-600 dark:text-zinc-300">CT-e</span>
+                                        @endif
+                                        @if ($doc->emitidaPelaEmpresa())
+                                            <span class="me-1.5 inline-block border border-violet-300 px-1 py-px align-[1px] text-[10px] font-semibold tracking-wide text-violet-700 dark:border-violet-700 dark:text-violet-300" title="{{ __('Nota de saída: emitida pela própria empresa') }}">{{ __('Emitida') }}</span>
                                         @endif
                                         {{ $doc->emitente_nome ?? __('Fornecedor não informado') }}
                                     </a>

@@ -2,6 +2,7 @@
 
 use App\Concerns\CompanyValidationRules;
 use App\Enums\Ambiente;
+use App\Enums\ModoBusca;
 use App\Enums\Uf;
 use App\Models\Company;
 use App\Services\CnpjLookup\CnpjLookup;
@@ -25,6 +26,7 @@ new #[Title('Empresa')] class extends Component {
     public int $ambiente = Ambiente::Homologacao->value;
     public bool $ativo = true;
     public bool $manifestacao_automatica = false;
+    public string $modo_busca = 'certificado_empresa';
 
     public ?string $lookupMessage = null;
     public string $lookupVariant = 'secondary';
@@ -43,6 +45,7 @@ new #[Title('Empresa')] class extends Component {
                 'ambiente' => $company->ambiente->value,
                 'ativo' => $company->ativo,
                 'manifestacao_automatica' => $company->manifestacao_automatica,
+                'modo_busca' => $company->modo_busca->value,
             ]);
 
             return;
@@ -93,15 +96,37 @@ new #[Title('Empresa')] class extends Component {
             : $this->setLookupMessage(__('Atenção: situação cadastral ":s" na Receita Federal.', ['s' => $data->situacao]), 'danger');
     }
 
+    #[Livewire\Attributes\Computed]
+    public function certificadoEscritorio(): ?App\Models\Certificate
+    {
+        return Auth::user()->currentOrganization->officeCertificate;
+    }
+
     private function setLookupMessage(string $message, string $variant): void
     {
         $this->lookupMessage = $message;
         $this->lookupVariant = $variant;
     }
 
+    /** O serviço da SEF-SC só existe em produção e não permite manifestar: o formulário já ajusta os dois campos. */
+    public function updatedModoBusca(): void
+    {
+        if ($this->modo_busca === ModoBusca::ContadorSc->value) {
+            $this->ambiente = Ambiente::Producao->value;
+            $this->manifestacao_automatica = false;
+        }
+    }
+
     public function save(): void
     {
         $organizationId = $this->company?->organization_id ?? Auth::user()->current_organization_id;
+        $this->updatedModoBusca();
+
+        if ($this->modo_busca === ModoBusca::ContadorSc->value && $this->uf !== Uf::SC->value) {
+            $this->addError('modo_busca', __('A busca pelo certificado do contador só existe para empresas de Santa Catarina. Escolha "Certificado da própria empresa".'));
+
+            return;
+        }
 
         $validated = $this->validate(
             $this->companyRules($organizationId, $this->company?->id),
@@ -134,7 +159,7 @@ new #[Title('Empresa')] class extends Component {
                 </x-slot>
             </flux:input>
 
-            <flux:select wire:model="uf" :label="__('UF')" :placeholder="__('Selecione')" required>
+            <flux:select wire:model.live="uf" :label="__('UF')" :placeholder="__('Selecione')" required>
                 @foreach (Uf::cases() as $option)
                     <flux:select.option :value="$option->value">{{ $option->value }}</flux:select.option>
                 @endforeach
@@ -148,15 +173,42 @@ new #[Title('Empresa')] class extends Component {
         <flux:input wire:model="razao_social" :label="__('Razão social')" required />
         <flux:input wire:model="nome_fantasia" :label="__('Nome fantasia')" />
 
-        <flux:radio.group wire:model="ambiente" :label="__('Ambiente SEFAZ')">
-            @foreach (Ambiente::cases() as $option)
-                <flux:radio :value="$option->value" :label="$option->label()" />
+        {{-- Forma de busca: o ponto que mais muda o funcionamento da empresa, por isso em destaque e com as limitações à vista. --}}
+        <flux:radio.group wire:model.live="modo_busca" :label="__('Como buscar as notas desta empresa?')" variant="cards" class="flex-col">
+            @foreach (ModoBusca::cases() as $modo)
+                <flux:radio :value="$modo->value" :label="$modo->label()" :description="$modo->resumo()" />
             @endforeach
         </flux:radio.group>
 
+        @if ($modo_busca === ModoBusca::ContadorSc->value)
+            <flux:callout icon="information-circle" color="violet">
+                <flux:callout.heading>{{ __('Antes de usar, confira:') }}</flux:callout.heading>
+                <flux:callout.text>
+                    <ul class="list-disc space-y-1 ps-5">
+                        @foreach (ModoBusca::ContadorSc->limitacoes() as $limitacao)
+                            <li>{{ $limitacao }}</li>
+                        @endforeach
+                    </ul>
+                </flux:callout.text>
+                @unless ($this->certificadoEscritorio)
+                    <x-slot name="actions">
+                        <flux:button size="sm" :href="route('companies.index')" wire:navigate>{{ __('Enviar certificado do escritório') }}</flux:button>
+                    </x-slot>
+                @endunless
+            </flux:callout>
+        @else
+            <flux:radio.group wire:model="ambiente" :label="__('Ambiente SEFAZ')">
+                @foreach (Ambiente::cases() as $option)
+                    <flux:radio :value="$option->value" :label="$option->label()" />
+                @endforeach
+            </flux:radio.group>
+        @endif
+
         <flux:switch wire:model="ativo" :label="__('Sincronização ativa')" />
-        <flux:switch wire:model="manifestacao_automatica" :label="__('Enviar Ciência da Operação automaticamente')"
-            :description="__('Ao receber só o resumo da NF-e, envia o evento 210210 para liberar o XML completo.')" />
+        @if ($modo_busca === ModoBusca::CertificadoEmpresa->value)
+            <flux:switch wire:model="manifestacao_automatica" :label="__('Enviar Ciência da Operação automaticamente')"
+                :description="__('Ao receber só o resumo da NF-e, envia o evento 210210 para liberar o XML completo.')" />
+        @endif
 
         <div class="flex gap-3">
             <flux:button variant="primary" type="submit">{{ __('Salvar') }}</flux:button>

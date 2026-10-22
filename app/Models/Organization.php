@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
@@ -55,6 +56,23 @@ class Organization extends Model
     public function invitations(): HasMany
     {
         return $this->hasMany(OrganizationInvitation::class);
+    }
+
+    /**
+     * Certificado do escritório contábil (e-CNPJ ou e-CPF do contador), usado pelas empresas no modo
+     * "certificado do contador (SC)".
+     *
+     * @return HasOne<Certificate, $this>
+     */
+    public function officeCertificate(): HasOne
+    {
+        return $this->hasOne(Certificate::class)->where('active', true)->latestOfMany();
+    }
+
+    /** @return HasMany<Certificate, $this> */
+    public function officeCertificates(): HasMany
+    {
+        return $this->hasMany(Certificate::class);
     }
 
     /** @return HasMany<ApiToken, $this> */

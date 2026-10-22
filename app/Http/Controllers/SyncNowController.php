@@ -4,8 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Enums\DocumentoTipo;
 use App\Jobs\SyncCompanyDfe;
+use App\Jobs\SyncCompanySefSc;
 use App\Models\Company;
 use App\Services\Sefaz\CnpjCooldown;
+use App\Services\SefSc\SefScDistribuicaoService;
 use App\Support\Fmt;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
@@ -17,6 +19,10 @@ class SyncNowController extends Controller
     public function __invoke(Company $company, CnpjCooldown $cooldown): RedirectResponse
     {
         Gate::authorize('view', $company);
+
+        if ($company->buscaPeloContador()) {
+            return $this->sefSc($company);
+        }
 
         $state = $company->syncState(DocumentoTipo::Nfe);
         $until = collect([$state->next_check_at, $cooldown->until($company)])->filter(fn (?CarbonImmutable $d): bool => (bool) $d?->isFuture())->max();
@@ -41,5 +47,23 @@ class SyncNowController extends Controller
         }
 
         return back()->with('success', __('Sincronização enfileirada. Os documentos aparecem em instantes.'));
+    }
+
+    /** A SEF-SC bloqueia (657) quem consulta antes de 12 horas depois de receber tudo: o botão respeita a mesma espera. */
+    private function sefSc(Company $company): RedirectResponse
+    {
+        if ($impedimento = SefScDistribuicaoService::impedimento($company)) {
+            return back()->with('error', $impedimento);
+        }
+
+        $proxima = $company->sefScState()->next_check_at;
+
+        if ($proxima?->isFuture()) {
+            return back()->with('error', __('A SEF-SC só permite nova busca desta empresa a partir de :hora.', ['hora' => Fmt::dateTime($proxima)]));
+        }
+
+        SyncCompanySefSc::dispatch($company);
+
+        return back()->with('success', __('Busca na SEF-SC enfileirada. Os documentos aparecem em instantes.'));
     }
 }
