@@ -7,6 +7,7 @@ use App\Jobs\SyncCompanyDfe;
 use App\Jobs\SyncCompanySefSc;
 use App\Models\Company;
 use App\Services\Sefaz\CnpjCooldown;
+use App\Services\Sefaz\SyncProgress;
 use App\Services\SefSc\SefScDistribuicaoService;
 use App\Support\Fmt;
 use Carbon\CarbonImmutable;
@@ -46,6 +47,8 @@ class SyncNowController extends Controller
             SyncCompanyDfe::dispatch($company, DocumentoTipo::Cte);
         }
 
+        SyncProgress::queued($company->id, __('Sincronização NF-e/CT-e enfileirada…'));
+
         return back()->with('success', __('Sincronização enfileirada. Os documentos aparecem em instantes.'));
     }
 
@@ -63,6 +66,8 @@ class SyncNowController extends Controller
         }
 
         SyncCompanySefSc::dispatch($company);
+
+        SyncProgress::queued($company->id, __('Busca na SEF-SC enfileirada…'));
 
         return back()->with('success', __('Busca na SEF-SC enfileirada. Os documentos aparecem em instantes.'));
     }

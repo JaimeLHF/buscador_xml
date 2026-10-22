@@ -99,6 +99,7 @@ new #[Title('Membros')] class extends Component {
 <section class="w-full max-w-4xl space-y-8">
     <flux:heading size="xl" level="1">{{ __('Membros de :org', ['org' => $this->organization->name]) }}</flux:heading>
 
+    <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
     <flux:table>
         <flux:table.columns>
             <flux:table.column>{{ __('Nome') }}</flux:table.column>
@@ -131,6 +132,7 @@ new #[Title('Membros')] class extends Component {
             @endforeach
         </flux:table.rows>
     </flux:table>
+    </div>
 
     @if ($this->canManage)
         <flux:card class="space-y-4">

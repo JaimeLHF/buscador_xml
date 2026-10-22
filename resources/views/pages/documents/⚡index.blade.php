@@ -11,6 +11,7 @@ use App\Jobs\SendConfirmacaoOperacao;
 use App\Models\DfeDocument;
 use App\Models\SyncState;
 use App\Queries\DocumentFilter;
+use App\Services\Sefaz\SyncProgress;
 use App\Support\Audit;
 use App\Support\Fmt;
 use Flux\Flux;
@@ -49,7 +50,7 @@ new #[Title('Notas recebidas')] class extends Component {
 
     public function updated(string $property): void
     {
-        if ($property === 'aba') {
+        if (in_array($property, ['aba', 'tipo'])) {
             $this->selecionados = [];
         }
 
@@ -108,6 +109,85 @@ new #[Title('Notas recebidas')] class extends Component {
             'ultima' => (clone $states)->max('last_checked_at'),
             'proxima' => (clone $states)->whereNotNull('next_check_at')->min('next_check_at'),
         ];
+    }
+
+    /** Empresas bloqueadas por consumo indevido (656) com next_check_at no futuro. */
+    #[Computed]
+    public function bloqueios(): array
+    {
+        return SyncState::query()
+            ->whereIn('company_id', Auth::user()->currentOrganization->companies()->select('id'))
+            ->where('last_cstat', '656')
+            ->whereNotNull('next_check_at')
+            ->where('next_check_at', '>', now())
+            ->with('company:id,razao_social')
+            ->get()
+            ->map(fn (SyncState $s) => [
+                'empresa' => $s->company->razao_social,
+                'tipo' => $s->tipo->label(),
+                'libera_em' => $s->next_check_at->timezone('America/Sao_Paulo')->format('H:i'),
+            ])
+            ->all();
+    }
+
+    public function sincronizarTodas(): void
+    {
+        $cooldown = app(\App\Services\Sefaz\CnpjCooldown::class);
+        $companies = Auth::user()->currentOrganization->companies()->where('ativo', true)->get();
+        $enfileiradas = 0;
+
+        foreach ($companies as $company) {
+            if ($company->buscaPeloContador()) {
+                if (! \App\Services\SefSc\SefScDistribuicaoService::impedimento($company) && ! $company->sefScState()->next_check_at?->isFuture()) {
+                    SyncProgress::queued($company->id, __('Busca SEF-SC enfileirada…'));
+                    \App\Jobs\SyncCompanySefSc::dispatch($company);
+                    $enfileiradas++;
+                }
+
+                continue;
+            }
+
+            $cert = $company->activeCertificate;
+            if (! $cert || $cert->isExpired()) {
+                continue;
+            }
+
+            foreach (\App\Enums\DocumentoTipo::cases() as $tipo) {
+                $state = $company->syncState($tipo);
+                $until = collect([$state->next_check_at, $cooldown->until($company, $tipo)])
+                    ->filter(fn (?\Carbon\CarbonImmutable $d): bool => (bool) $d?->isFuture())->max();
+
+                if (! $until) {
+                    SyncProgress::queued($company->id, __('Sincronização enfileirada…'));
+                    \App\Jobs\SyncCompanyDfe::dispatch($company, $tipo);
+                    $enfileiradas++;
+                }
+            }
+        }
+
+        unset($this->sincronizacao);
+
+        $enfileiradas > 0
+            ? Flux::toast(variant: 'success', text: __(':n sincronizações enfileiradas.', ['n' => $enfileiradas]))
+            : Flux::toast(variant: 'warning', text: __('Nenhuma empresa pôde ser sincronizada agora. Verifique os certificados ou aguarde o intervalo da SEFAZ.'));
+    }
+
+    /** Status agregado de sync de todas as empresas da organização. */
+    #[Computed]
+    public function syncStatuses(): array
+    {
+        $companies = Auth::user()->currentOrganization->companies()->where('ativo', true)->pluck('id', 'razao_social');
+        $active = [];
+
+        foreach ($companies as $nome => $id) {
+            $progress = SyncProgress::get($id);
+
+            if ($progress) {
+                $active[] = ['nome' => $nome, ...$progress];
+            }
+        }
+
+        return $active;
     }
 
     #[Computed]
@@ -262,7 +342,12 @@ new #[Title('Notas recebidas')] class extends Component {
         $this->redirectRoute('exports.index', navigate: true);
     }
 }; ?>
-<section class="mx-auto w-full max-w-5xl space-y-6">
+@php
+    $syncs = $this->syncStatuses;
+    $anySyncing = collect($syncs)->contains(fn ($s) => in_array($s['status'] ?? '', ['queued', 'running']));
+    $anyRecent = ! empty($syncs);
+@endphp
+<section class="mx-auto w-full max-w-5xl space-y-6" @if($anySyncing) wire:poll.2s @elseif($anyRecent) wire:poll.5s @else wire:poll.30s @endif>
     {{-- Cabeçalho: o que é a tela, quando o sistema buscou notas e a ação principal (baixar). --}}
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="space-y-1">
@@ -277,6 +362,9 @@ new #[Title('Notas recebidas')] class extends Component {
         </div>
 
         <div class="flex flex-wrap gap-2">
+            <flux:button variant="primary" icon="arrow-path" wire:click="sincronizarTodas">
+                {{ __('Sincronizar') }}
+            </flux:button>
             <flux:button icon="table-cells" wire:click="exportar('csv')" wire:confirm="{{ __('Gerar uma planilha com as :n notas desta lista?', ['n' => $this->documents->total()]) }}">
                 {{ __('Baixar planilha') }}
             </flux:button>
@@ -296,11 +384,91 @@ new #[Title('Notas recebidas')] class extends Component {
         </flux:callout>
     @endforeach
 
-    {{-- Busca única + filtros extras numa gaveta. --}}
+    @if (! empty($this->bloqueios))
+        <flux:callout icon="shield-exclamation" color="amber">
+            <flux:callout.heading>{{ __('SEFAZ limitou consultas (consumo indevido)') }}</flux:callout.heading>
+            <flux:callout.text>
+                {{ __('Isso é normal na primeira sincronização de uma empresa. O sistema tentará novamente automaticamente quando a SEFAZ liberar.') }}
+                <ul class="mt-2 space-y-0.5">
+                    @foreach ($this->bloqueios as $b)
+                        <li>{{ $b['empresa'] }} ({{ $b['tipo'] }}) — {{ __('libera às :hora', ['hora' => $b['libera_em']]) }}</li>
+                    @endforeach
+                </ul>
+            </flux:callout.text>
+        </flux:callout>
+    @endif
+
+    @if (! empty($syncs))
+        <div class="space-y-2">
+            @foreach ($syncs as $sync)
+                @php
+                    $st = $sync['status'] ?? 'queued';
+                    $isActive = in_array($st, ['queued', 'running']);
+                    $isDone = $st === 'done';
+                    $outcome = $sync['outcome'] ?? null;
+                    $page = $sync['page'] ?? 0;
+                    $docs = $sync['docs'] ?? 0;
+                    $ultNsu = $sync['ult_nsu'] ?? null;
+                    $maxNsu = $sync['max_nsu'] ?? null;
+                    $pct = ($ultNsu && $maxNsu && (int) $maxNsu > 0) ? min(100, (int) round((int) $ultNsu / (int) $maxNsu * 100)) : null;
+                @endphp
+
+                @if ($isActive)
+                    <div class="flex items-center gap-3 rounded border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm dark:border-blue-900 dark:bg-blue-950/40">
+                        <svg class="size-4 shrink-0 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path></svg>
+                        <div class="min-w-0 flex-1">
+                            <span class="font-medium text-zinc-900 dark:text-white">{{ $sync['nome'] }}</span>
+                            <span class="text-zinc-500 dark:text-zinc-400">
+                                @if ($st === 'queued')
+                                    — {{ __('na fila…') }}
+                                @elseif ($page > 0)
+                                    — {{ __('página :n', ['n' => $page]) }}
+                                @else
+                                    — {{ __('conectando…') }}
+                                @endif
+                            </span>
+                        </div>
+                        @if ($pct !== null)
+                            <div class="w-24 rounded-full bg-blue-200 dark:bg-blue-900 h-1.5">
+                                <div class="h-1.5 rounded-full bg-blue-500 transition-all duration-500" style="width: {{ $pct }}%"></div>
+                            </div>
+                            <span class="tabular-nums text-zinc-500 dark:text-zinc-400 text-xs">{{ $pct }}%</span>
+                        @endif
+                        @if ($docs > 0)
+                            <flux:badge color="blue" size="sm">{{ trans_choice(':n doc|:n docs', $docs, ['n' => $docs]) }}</flux:badge>
+                        @endif
+                    </div>
+                @elseif ($isDone)
+                    @php
+                        $doneColor = match($outcome) { 'up_to_date' => 'green', 'blocked', 'failed' => 'red', default => 'zinc' };
+                        $doneBorder = match($outcome) { 'up_to_date' => 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/40', 'blocked', 'failed' => 'border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40', default => 'border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800' };
+                        $doneLabel = match($outcome) { 'up_to_date' => __('em dia'), 'blocked' => __('bloqueado'), 'failed' => __('falhou'), 'not_due' => __('aguardando'), default => __('concluído') };
+                    @endphp
+                    <div class="flex items-center gap-3 rounded border {{ $doneBorder }} px-4 py-2.5 text-sm">
+                        <span class="font-medium text-zinc-900 dark:text-white">{{ $sync['nome'] }}</span>
+                        <flux:badge :color="$doneColor" size="sm">{{ $doneLabel }}</flux:badge>
+                        @if ($docs > 0)
+                            <span class="text-zinc-500 dark:text-zinc-400 text-xs tabular-nums">{{ trans_choice(':n documento|:n documentos', $docs, ['n' => $docs]) }}</span>
+                        @endif
+                    </div>
+                @endif
+            @endforeach
+        </div>
+    @endif
+
+    {{-- Busca única + filtro de empresa + filtros extras numa gaveta. --}}
     <div class="flex gap-2">
         <div class="min-w-0 flex-1">
             <flux:input wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Fornecedor, transportadora, CNPJ ou chave')" :aria-label="__('Buscar notas')" clearable />
         </div>
+        @if ($this->companies->count() > 1)
+            <flux:select wire:model.live="company_id" class="w-48 shrink-0" :aria-label="__('Filtrar por empresa')">
+                <flux:select.option value="">{{ __('Todas as empresas') }}</flux:select.option>
+                @foreach ($this->companies as $c)
+                    <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
+                @endforeach
+            </flux:select>
+        @endif
         <flux:modal.trigger name="filtros">
             <flux:button icon="adjustments-horizontal">
                 <span class="max-sm:sr-only">{{ __('Filtros') }}</span>
@@ -311,11 +479,19 @@ new #[Title('Notas recebidas')] class extends Component {
         </flux:modal.trigger>
     </div>
 
-    <flux:radio.group wire:model.live="aba" variant="segmented" :aria-label="__('Mostrar')">
-        <flux:radio value="" :label="__('Todas')" class="max-sm:px-2 max-sm:text-xs" />
-        <flux:radio value="sem_xml" :label="__('Sem XML (:n)', ['n' => number_format($this->contagens['sem_xml'], 0, ',', '.')])" class="max-sm:px-2 max-sm:text-xs" />
-        <flux:radio value="canceladas" :label="__('Canceladas (:n)', ['n' => number_format($this->contagens['canceladas'], 0, ',', '.')])" class="max-sm:px-2 max-sm:text-xs" />
-    </flux:radio.group>
+    <div class="flex flex-wrap gap-3">
+        <flux:radio.group wire:model.live="tipo" variant="segmented" :aria-label="__('Tipo de documento')">
+            <flux:radio value="" :label="__('Todos')" class="max-sm:px-2 max-sm:text-xs" />
+            <flux:radio value="nfe" :label="__('NF-e')" class="max-sm:px-2 max-sm:text-xs" />
+            <flux:radio value="cte" :label="__('CT-e')" class="max-sm:px-2 max-sm:text-xs" />
+        </flux:radio.group>
+
+        <flux:radio.group wire:model.live="aba" variant="segmented" :aria-label="__('Situação')">
+            <flux:radio value="" :label="__('Todas')" class="max-sm:px-2 max-sm:text-xs" />
+            <flux:radio value="sem_xml" :label="__('Sem XML (:n)', ['n' => number_format($this->contagens['sem_xml'], 0, ',', '.')])" class="max-sm:px-2 max-sm:text-xs" />
+            <flux:radio value="canceladas" :label="__('Canceladas (:n)', ['n' => number_format($this->contagens['canceladas'], 0, ',', '.')])" class="max-sm:px-2 max-sm:text-xs" />
+        </flux:radio.group>
+    </div>
 
     @if ($aba === 'sem_xml')
         <flux:callout icon="information-circle" color="zinc">

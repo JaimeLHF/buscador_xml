@@ -11,6 +11,7 @@ use App\Services\Sefaz\DocumentProcessor;
 use App\Services\Sefaz\FailureClassifier;
 use App\Services\Sefaz\SefazRequestLogger;
 use App\Services\Sefaz\SyncOutcome;
+use App\Services\Sefaz\SyncProgress;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -82,7 +83,7 @@ class SefScDistribuicaoService
         }
 
         for ($page = 0; $page < config('sefaz.max_pages_per_run'); $page++) {
-            $outcome = $this->fetchPage($company, $state);
+            $outcome = $this->fetchPage($company, $state, $page + 1);
 
             if ($outcome !== SyncOutcome::MorePending) {
                 return $outcome;
@@ -94,7 +95,7 @@ class SefScDistribuicaoService
         return SyncOutcome::MorePending;
     }
 
-    private function fetchPage(Company $company, SefScSyncState $state): SyncOutcome
+    private function fetchPage(Company $company, SefScSyncState $state, int $pageNumber = 1): SyncOutcome
     {
         $sent = $state->ult_nsu;
         $started = microtime(true);
@@ -139,6 +140,8 @@ class SefScDistribuicaoService
 
                 $state->save();
             });
+
+            SyncProgress::running($company->id, $pageNumber, count($ret->documents), $state->ult_nsu, null);
 
             return $ret->temMais() ? SyncOutcome::MorePending : SyncOutcome::UpToDate;
         }

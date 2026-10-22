@@ -65,7 +65,7 @@ class DistribuicaoService
         }
 
         for ($page = 0; $page < config('sefaz.max_pages_per_run'); $page++) {
-            $outcome = $this->fetchPage($company, $state);
+            $outcome = $this->fetchPage($company, $state, $page + 1);
 
             if ($outcome !== SyncOutcome::MorePending) {
                 return $outcome;
@@ -78,7 +78,7 @@ class DistribuicaoService
         return SyncOutcome::MorePending;
     }
 
-    private function fetchPage(Company $company, SyncState $state): SyncOutcome
+    private function fetchPage(Company $company, SyncState $state, int $pageNumber = 1): SyncOutcome
     {
         $sent = $state->ult_nsu;
         $started = microtime(true);
@@ -115,6 +115,8 @@ class DistribuicaoService
 
                 $state->save();
             });
+
+            SyncProgress::running($company->id, $pageNumber, count($ret->documents), $state->ult_nsu, $state->max_nsu);
 
             return $ret->hasMore() ? SyncOutcome::MorePending : SyncOutcome::UpToDate;
         }

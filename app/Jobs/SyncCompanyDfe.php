@@ -5,6 +5,8 @@ namespace App\Jobs;
 use App\Enums\DocumentoTipo;
 use App\Models\Company;
 use App\Services\Sefaz\DistribuicaoService;
+use App\Services\Sefaz\SyncOutcome;
+use App\Services\Sefaz\SyncProgress;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -33,6 +35,15 @@ class SyncCompanyDfe implements ShouldBeUnique, ShouldQueue
 
     public function handle(DistribuicaoService $service): void
     {
-        $service->sync($this->company, $this->tipo);
+        try {
+            $outcome = $service->sync($this->company, $this->tipo);
+
+            if ($outcome !== SyncOutcome::MorePending) {
+                SyncProgress::done($this->company->id, $outcome);
+            }
+        } catch (\Throwable $e) {
+            SyncProgress::done($this->company->id, SyncOutcome::Failed, $e->getMessage());
+            throw $e;
+        }
     }
 }

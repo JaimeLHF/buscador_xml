@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Models\Company;
+use App\Services\Sefaz\SyncOutcome;
+use App\Services\Sefaz\SyncProgress;
 use App\Services\SefSc\SefScDistribuicaoService;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -31,6 +33,15 @@ class SyncCompanySefSc implements ShouldBeUnique, ShouldQueue
 
     public function handle(SefScDistribuicaoService $service): void
     {
-        $service->sync($this->company);
+        try {
+            $outcome = $service->sync($this->company);
+
+            if ($outcome !== SyncOutcome::MorePending) {
+                SyncProgress::done($this->company->id, $outcome);
+            }
+        } catch (\Throwable $e) {
+            SyncProgress::done($this->company->id, SyncOutcome::Failed, $e->getMessage());
+            throw $e;
+        }
     }
 }

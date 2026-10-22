@@ -11,6 +11,7 @@ use App\Models\Company;
 use App\Models\SyncState;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
+use App\Services\Sefaz\SyncProgress;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -32,6 +33,7 @@ class DispatchDueSyncs extends Command
                 ->whereHas('certificates', fn (Builder $q) => $q->where('active', true)->where('valid_to', '>', now())))
             ->with('company')
             ->each(function (SyncState $state) use (&$count): void {
+                SyncProgress::queued($state->company_id, 'Sincronização automática');
                 SyncCompanyDfe::dispatch($state->company, $state->tipo);
                 $count++;
             });
@@ -48,6 +50,7 @@ class DispatchDueSyncs extends Command
                 ->whereDoesntHave('sefScSyncState')
                 ->orWhereHas('sefScSyncState', fn (Builder $q) => $q->whereNull('next_check_at')->orWhere('next_check_at', '<=', now())))
             ->each(function (Company $company) use (&$count): void {
+                SyncProgress::queued($company->id, 'Sincronização automática SEF-SC');
                 SyncCompanySefSc::dispatch($company);
                 $count++;
             });

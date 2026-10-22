@@ -132,6 +132,7 @@ new #[Title('Integrações')] class extends Component {
         </form>
 
         @if ($this->tokens->isNotEmpty())
+            <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:table>
                 <flux:table.columns>
                     <flux:table.column>{{ __('Nome') }}</flux:table.column>
@@ -152,6 +153,7 @@ new #[Title('Integrações')] class extends Component {
                     @endforeach
                 </flux:table.rows>
             </flux:table>
+            </div>
         @endif
 
         <details class="text-sm">

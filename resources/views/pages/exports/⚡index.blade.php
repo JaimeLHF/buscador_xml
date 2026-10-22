@@ -26,6 +26,7 @@ new #[Title('Downloads')] class extends Component {
         <flux:subheading>{{ __('Arquivos gerados pelos botões "Baixar XMLs" e "Baixar planilha" da tela de notas. Ficam disponíveis por 7 dias.') }}</flux:subheading>
     </div>
 
+    <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
     <flux:table>
         <flux:table.columns>
             <flux:table.column>{{ __('Pedido em') }}</flux:table.column>
@@ -59,4 +60,5 @@ new #[Title('Downloads')] class extends Component {
             @endforelse
         </flux:table.rows>
     </flux:table>
+    </div>
 </section>

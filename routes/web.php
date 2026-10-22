@@ -38,6 +38,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('documents/{document}/xml', [DocumentFileController::class, 'xml'])->name('documents.xml');
         Route::get('documents/{document}/danfe', [DocumentFileController::class, 'danfe'])->middleware('throttle:30,1')->name('documents.danfe');
 
+        Route::livewire('suppliers', 'pages::suppliers.index')->name('suppliers.index');
+        Route::livewire('suppliers/{cnpj}', 'pages::suppliers.show')->name('suppliers.show');
+
         Route::livewire('exports', 'pages::exports.index')->name('exports.index');
         Route::get('exports/{export}/download', ExportDownloadController::class)->name('exports.download');
 

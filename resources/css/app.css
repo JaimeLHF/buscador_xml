@@ -89,6 +89,12 @@ select:focus[data-flux-control] {
     @apply size-5;
 }
 
+/* Barra de progresso indeterminada para sincronização. */
+@keyframes indeterminate {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(300%); }
+}
+
 /* Componentes do Flux com raio fixo em pixels (paginação, checkbox, avatar) seguem o mesmo canto reto. */
 .rounded-\[6px\],
 .rounded-\[8px\],

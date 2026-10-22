@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Company;
+use App\Services\Sefaz\SyncProgress;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Title;
 use Livewire\Component;
@@ -23,13 +24,106 @@ new #[Title('Empresa')] class extends Component {
     }
 
     #[Livewire\Attributes\Computed]
+    public function syncStatus(): ?array
+    {
+        return SyncProgress::get($this->company->id);
+    }
+
+    #[Livewire\Attributes\Computed]
     public function recentDocuments()
     {
         return $this->company->documents()->latest('data_emissao')->limit(20)->get();
     }
 }; ?>
 
-<section class="w-full space-y-8">
+@php
+    $sync = $this->syncStatus;
+    $syncActive = $sync && in_array($sync['status'] ?? '', ['queued', 'running']);
+    $syncDone = $sync && ($sync['status'] ?? '') === 'done';
+    $pollInterval = $syncActive ? 'wire:poll.2s' : ($syncDone ? 'wire:poll.5s' : 'wire:poll.30s');
+@endphp
+<section class="w-full space-y-8" {{ $pollInterval }}>
+    @if ($sync)
+        @php
+            $status = $sync['status'] ?? 'queued';
+            $isActive = in_array($status, ['queued', 'running']);
+            $isDone = $status === 'done';
+            $outcome = $sync['outcome'] ?? null;
+            $page = $sync['page'] ?? 0;
+            $docs = $sync['docs'] ?? 0;
+            $ultNsu = $sync['ult_nsu'] ?? null;
+            $maxNsu = $sync['max_nsu'] ?? null;
+            $percent = ($ultNsu && $maxNsu && (int) $maxNsu > 0) ? min(100, (int) round((int) $ultNsu / (int) $maxNsu * 100)) : null;
+
+            if ($isDone) {
+                $color = match($outcome) {
+                    'up_to_date' => 'green',
+                    'blocked', 'failed' => 'red',
+                    default => 'zinc',
+                };
+                $icon = match($outcome) {
+                    'up_to_date' => 'check-circle',
+                    'blocked', 'failed' => 'x-circle',
+                    'not_due', 'locked' => 'clock',
+                    default => 'information-circle',
+                };
+                $label = match($outcome) {
+                    'up_to_date' => __('Sincronização concluída'),
+                    'blocked' => __('Bloqueado pela SEFAZ (consumo indevido)'),
+                    'failed' => $sync['message'] ?? __('Falha na sincronização'),
+                    'not_due' => __('Consulta ainda não liberada'),
+                    'locked' => __('Outra sincronização já está rodando'),
+                    default => __('Sincronização finalizada'),
+                };
+            }
+        @endphp
+
+        @if ($isActive)
+            <flux:callout icon="arrow-path" color="blue">
+                <div class="w-full space-y-2">
+                    <div class="flex items-center justify-between">
+                        <flux:text class="font-medium">
+                            @if ($status === 'queued')
+                                {{ $sync['message'] ?? __('Na fila…') }}
+                            @else
+                                {{ __('Sincronizando…') }}
+                                @if ($page > 0)
+                                    <span class="text-zinc-500 font-normal">{{ __('Página :n', ['n' => $page]) }}</span>
+                                @endif
+                            @endif
+                        </flux:text>
+                        @if ($docs > 0)
+                            <flux:badge color="blue" size="sm">{{ trans_choice(':n documento|:n documentos', $docs, ['n' => number_format($docs, 0, ',', '.')]) }}</flux:badge>
+                        @endif
+                    </div>
+
+                    @if ($percent !== null)
+                        <div class="w-full rounded-full bg-zinc-200 dark:bg-zinc-700 h-2.5">
+                            <div class="h-2.5 rounded-full bg-blue-500 transition-all duration-500" style="width: {{ $percent }}%"></div>
+                        </div>
+                        <flux:text size="sm" class="tabular-nums">{{ $percent }}% · NSU {{ number_format((int) $ultNsu, 0, ',', '.') }} {{ __('de') }} {{ number_format((int) $maxNsu, 0, ',', '.') }}</flux:text>
+                    @else
+                        <div class="w-full rounded-full bg-zinc-200 dark:bg-zinc-700 h-2.5 overflow-hidden">
+                            <div class="h-2.5 rounded-full bg-blue-500 w-1/3 animate-[indeterminate_1.5s_ease-in-out_infinite]"></div>
+                        </div>
+                        @if ($status === 'running' && $page > 0)
+                            <flux:text size="sm" class="tabular-nums">{{ __('Página :n · :d documentos até agora', ['n' => $page, 'd' => number_format($docs, 0, ',', '.')]) }}</flux:text>
+                        @endif
+                    @endif
+                </div>
+            </flux:callout>
+        @elseif ($isDone)
+            <flux:callout :icon="$icon" :color="$color">
+                <div class="flex items-center justify-between w-full">
+                    <flux:text class="font-medium">{{ $label }}</flux:text>
+                    @if ($docs > 0)
+                        <flux:badge :color="$color" size="sm">{{ trans_choice(':n documento recebido|:n documentos recebidos', $docs, ['n' => number_format($docs, 0, ',', '.')]) }}</flux:badge>
+                    @endif
+                </div>
+            </flux:callout>
+        @endif
+    @endif
+
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
             <flux:heading size="xl" level="1">{{ $company->razao_social }}</flux:heading>
@@ -39,9 +133,10 @@ new #[Title('Empresa')] class extends Component {
 
         <div class="flex flex-wrap gap-2">
             <flux:button variant="ghost" icon="clock" :href="route('sefaz-log', ['company_id' => $company->id])" wire:navigate>{{ __('Histórico de buscas') }}</flux:button>
+            @php($syncing = $sync && in_array($sync['status'] ?? '', ['queued', 'running']))
             <form method="POST" action="{{ route('companies.sync', $company) }}">
                 @csrf
-                <flux:button type="submit" icon="arrow-path">{{ __('Sincronizar agora') }}</flux:button>
+                <flux:button type="submit" icon="arrow-path" :disabled="$syncing">{{ $syncing ? __('Sincronizando…') : __('Sincronizar agora') }}</flux:button>
             </form>
 
             @can('update', $company)
@@ -101,6 +196,18 @@ new #[Title('Empresa')] class extends Component {
                 <flux:text size="sm">{{ __('Depois de receber todas as notas, a SEF-SC só aceita nova busca 12 horas depois.') }}</flux:text>
             @else
             @foreach ($company->syncStates as $state)
+                @if ($state->last_cstat === '656' && $state->next_check_at?->isFuture())
+                    <flux:callout icon="shield-exclamation" color="amber">
+                        <flux:callout.heading>{{ __(':tipo bloqueado pela SEFAZ (consumo indevido)', ['tipo' => $state->tipo->label()]) }}</flux:callout.heading>
+                        <flux:callout.text>
+                            {{ __('A SEFAZ limitou as consultas de :tipo deste CNPJ. Isso é normal na primeira sincronização. O sistema tentará novamente automaticamente às :hora.', [
+                                'tipo' => $state->tipo->label(),
+                                'hora' => $state->next_check_at->timezone('America/Sao_Paulo')->format('H:i'),
+                            ]) }}
+                        </flux:callout.text>
+                    </flux:callout>
+                @endif
+
                 <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
                     <dt class="text-zinc-500">{{ __('Documento') }}</dt><dd>{{ $state->tipo->label() }}</dd>
                     <dt class="text-zinc-500">{{ __('Último NSU') }}</dt><dd class="font-mono">{{ $state->ult_nsu }}</dd>
@@ -125,6 +232,7 @@ new #[Title('Empresa')] class extends Component {
             <flux:link :href="route('documents.index', ['company_id' => $company->id])" wire:navigate>{{ __('Ver notas desta empresa') }}</flux:link>
         </div>
 
+        <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
         <flux:table>
             <flux:table.columns>
                 <flux:table.column>{{ __('Emissão') }}</flux:table.column>
@@ -149,5 +257,6 @@ new #[Title('Empresa')] class extends Component {
                 @endforelse
             </flux:table.rows>
         </flux:table>
+        </div>
     </div>
 </section>

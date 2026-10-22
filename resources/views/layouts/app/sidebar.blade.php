@@ -20,6 +20,9 @@
                 <flux:sidebar.item icon="building-office" :href="route('companies.index')" :current="request()->routeIs('companies.*', 'sefaz-log')" wire:navigate>
                     {{ __('Empresas') }}
                 </flux:sidebar.item>
+                <flux:sidebar.item icon="truck" :href="route('suppliers.index')" :current="request()->routeIs('suppliers.*')" wire:navigate>
+                    {{ __('Fornecedores') }}
+                </flux:sidebar.item>
                 <flux:sidebar.item icon="arrow-down-tray" :href="route('exports.index')" :current="request()->routeIs('exports.*')" wire:navigate>
                     {{ __('Downloads') }}
                 </flux:sidebar.item>

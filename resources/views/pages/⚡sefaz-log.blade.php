@@ -67,6 +67,7 @@ new #[Title('Histórico de buscas')] class extends Component {
         <flux:checkbox wire:model.live="somenteErros" :label="__('Somente erros e rejeições')" />
     </div>
 
+    <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
     <flux:table :paginate="$this->requests">
         <flux:table.columns>
             <flux:table.column>{{ __('Data') }}</flux:table.column>
@@ -111,4 +112,5 @@ new #[Title('Histórico de buscas')] class extends Component {
             @endforelse
         </flux:table.rows>
     </flux:table>
+    </div>
 </section>

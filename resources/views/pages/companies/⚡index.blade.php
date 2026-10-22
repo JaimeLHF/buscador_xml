@@ -69,6 +69,7 @@ new #[Title('Empresas')] class extends Component {
 
     <flux:input wire:model.live.debounce.400ms="search" icon="magnifying-glass" :placeholder="__('Buscar por razão social, fantasia ou CNPJ')" class="max-w-md" />
 
+    <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
     <flux:table :paginate="$this->companies">
         <flux:table.columns>
             <flux:table.column>{{ __('Empresa') }}</flux:table.column>
@@ -115,4 +116,5 @@ new #[Title('Empresas')] class extends Component {
             @endforelse
         </flux:table.rows>
     </flux:table>
+    </div>
 </section>
