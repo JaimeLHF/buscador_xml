@@ -46,18 +46,19 @@ new #[Title('Log SEFAZ')] class extends Component {
     <flux:heading size="xl" level="1">{{ __('Log de requisições à SEFAZ') }}</flux:heading>
 
     <div class="flex flex-wrap items-end gap-4">
+        @if ($this->companies->count() > 1)
         <flux:select wire:model.live="company_id" :label="__('Empresa')" class="max-w-xs">
             <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
             @foreach ($this->companies as $c)
                 <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
             @endforeach
         </flux:select>
+        @endif
         <flux:select wire:model.live="servico" :label="__('Serviço')" class="max-w-xs">
             <flux:select.option value="">{{ __('Todos') }}</flux:select.option>
-            <flux:select.option value="dist_nsu">{{ __('Distribuição (NSU)') }}</flux:select.option>
-            <flux:select.option value="cons_chave">{{ __('Consulta por chave') }}</flux:select.option>
-            <flux:select.option value="cons_nsu">{{ __('Consulta por NSU') }}</flux:select.option>
-            <flux:select.option value="manifestacao">{{ __('Manifestação') }}</flux:select.option>
+            @foreach (App\Enums\SefazServico::cases() as $s)
+                <flux:select.option :value="$s->value">{{ $s->label() }}</flux:select.option>
+            @endforeach
         </flux:select>
         <flux:checkbox wire:model.live="somenteErros" :label="__('Somente erros e rejeições')" />
     </div>
@@ -65,7 +66,9 @@ new #[Title('Log SEFAZ')] class extends Component {
     <flux:table :paginate="$this->requests">
         <flux:table.columns>
             <flux:table.column>{{ __('Data') }}</flux:table.column>
-            <flux:table.column>{{ __('Empresa') }}</flux:table.column>
+            @if ($this->companies->count() > 1)
+                <flux:table.column>{{ __('Empresa') }}</flux:table.column>
+            @endif
             <flux:table.column>{{ __('Serviço') }}</flux:table.column>
             <flux:table.column>{{ __('Retorno') }}</flux:table.column>
             <flux:table.column>{{ __('NSU enviado → retornado / máx.') }}</flux:table.column>
@@ -76,16 +79,18 @@ new #[Title('Log SEFAZ')] class extends Component {
             @forelse ($this->requests as $r)
                 <flux:table.row :key="$r->id">
                     <flux:table.cell class="whitespace-nowrap">{{ Fmt::dateTime($r->created_at) }}</flux:table.cell>
-                    <flux:table.cell>{{ $r->company->razao_social }}</flux:table.cell>
-                    <flux:table.cell>{{ $r->servico->value }}{{ $r->tp_amb === 1 ? '' : ' · hom' }}</flux:table.cell>
-                    <flux:table.cell>
+                    @if ($this->companies->count() > 1)
+                        <flux:table.cell>{{ $r->company->razao_social }}</flux:table.cell>
+                    @endif
+                    <flux:table.cell>{{ $r->servico->label() }}{{ $r->tp_amb === 1 ? '' : ' · '.__('homologação') }}</flux:table.cell>
+                    <flux:table.cell class="min-w-56 whitespace-normal">
                         @if ($r->erro)
                             <span class="text-red-600 dark:text-red-400">{{ $r->erro }}</span>
                         @else
                             <span class="font-mono">{{ $r->cstat }}</span> {{ $r->xmotivo }}
                         @endif
                     </flux:table.cell>
-                    <flux:table.cell class="font-mono text-xs">
+                    <flux:table.cell class="min-w-40 font-mono text-xs break-all whitespace-normal">
                         @if ($r->ult_nsu_enviado)
                             {{ ltrim($r->ult_nsu_enviado, '0') ?: '0' }} → {{ ltrim((string) $r->ult_nsu_retornado, '0') ?: '0' }} / {{ ltrim((string) $r->max_nsu, '0') ?: '0' }}
                         @elseif ($r->chave)

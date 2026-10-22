@@ -77,7 +77,7 @@ new #[Title('Empresas')] class extends Component {
                     <flux:table.cell class="font-mono">{{ $company->cnpjValue()->formatted() }}</flux:table.cell>
                     <flux:table.cell>{{ $company->uf->value }}</flux:table.cell>
                     <flux:table.cell>
-                        <flux:badge size="sm" :color="$company->ambiente === App\Enums\Ambiente::Producao ? 'red' : 'zinc'">
+                        <flux:badge size="sm" :color="$company->ambiente === App\Enums\Ambiente::Producao ? 'sky' : 'amber'">
                             {{ $company->ambiente->label() }}
                         </flux:badge>
                     </flux:table.cell>
