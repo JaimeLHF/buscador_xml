@@ -23,6 +23,17 @@
     --color-zinc-900: #171717;
     --color-zinc-950: #0a0a0a;
 
+    /* Cantos retos, no estilo de painéis como o Grafana: todo arredondamento vira 2px (rounded-full continua redondo). */
+    --radius-xs: 2px;
+    --radius-sm: 2px;
+    --radius-md: 2px;
+    --radius-lg: 2px;
+    --radius-xl: 2px;
+    --radius-2xl: 2px;
+    --radius-3xl: 2px;
+    --radius-4xl: 2px;
+    --radius: 2px;
+
     --color-accent: var(--color-neutral-800);
     --color-accent-content: var(--color-neutral-800);
     --color-accent-foreground: var(--color-white);
@@ -76,4 +87,13 @@ select:focus[data-flux-control] {
 
 .nav-principal [data-flux-sidebar-item] svg {
     @apply size-5;
+}
+
+/* Componentes do Flux com raio fixo em pixels (paginação, checkbox, avatar) seguem o mesmo canto reto. */
+.rounded-\[6px\],
+.rounded-\[8px\],
+.rounded-\[4px\],
+.rounded-\[3px\],
+.rounded-\[\.3rem\] {
+    border-radius: 2px;
 }
