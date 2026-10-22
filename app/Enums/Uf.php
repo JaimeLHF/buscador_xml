@@ -44,4 +44,15 @@ enum Uf: string
             self::GO => 52, self::DF => 53,
         };
     }
+
+    public static function fromIbge(int $code): ?self
+    {
+        foreach (self::cases() as $uf) {
+            if ($uf->ibge() === $code) {
+                return $uf;
+            }
+        }
+
+        return null;
+    }
 }

@@ -24,19 +24,9 @@ final class NfeReader
     /** @return array<string, mixed> */
     public function read(): array
     {
-        $dom = new DOMDocument;
+        $dom = $this->load();
 
-        // LIBXML_NONET: nunca busca nada na rede; entidades externas não são carregadas no PHP 8.
-        if (! @$dom->loadXML($this->xml, LIBXML_NONET | LIBXML_NOBLANKS)) {
-            throw new RuntimeException('XML inválido.');
-        }
-
-        $this->xp = new DOMXPath($dom);
-        // O prefixo "n" aponta para o namespace do documento: NF-e e CT-e usam os mesmos caminhos relativos.
-        $cte = $dom->documentElement?->namespaceURI === self::NS_CTE;
-        $this->xp->registerNamespace('n', $cte ? self::NS_CTE : self::NS_NFE);
-
-        if ($cte) {
+        if ($dom->documentElement?->namespaceURI === self::NS_CTE) {
             return $this->cte($dom);
         }
 
@@ -229,6 +219,46 @@ final class NfeReader
             'prazo' => self::code(['0' => 'À vista', '1' => 'A prazo'], $this->text('n:indPag', $p)),
             'valor' => $this->text('n:vPag', $p),
         ], $this->nodes('n:pag/n:detPag', $inf));
+    }
+
+    /**
+     * CNPJ (ou CPF) do tomador do serviço de um CT-e: quem pode registrar a prestação em desacordo.
+     * toma3 aponta para uma das partes; toma4 (e o toma do CT-e OS) traz o próprio documento.
+     */
+    public function tomadorCnpj(): ?string
+    {
+        $dom = $this->load();
+
+        if ($dom->documentElement?->namespaceURI !== self::NS_CTE || ! ($inf = $this->node('//n:infCte'))) {
+            return null;
+        }
+
+        $ide = $this->node('n:ide', $inf);
+        $parte = match ($this->text('n:toma3/n:toma', $ide)) {
+            '0' => $this->node('n:rem', $inf),
+            '1' => $this->node('n:exped', $inf),
+            '2' => $this->node('n:receb', $inf),
+            '3' => $this->node('n:dest', $inf),
+            default => $this->node('n:toma4', $ide) ?? $this->node('n:toma', $inf),
+        };
+
+        return $parte ? ($this->text('n:CNPJ', $parte) ?? $this->text('n:CPF', $parte)) : null;
+    }
+
+    private function load(): DOMDocument
+    {
+        $dom = new DOMDocument;
+
+        // LIBXML_NONET: nunca busca nada na rede; entidades externas não são carregadas no PHP 8.
+        if (! @$dom->loadXML($this->xml, LIBXML_NONET | LIBXML_NOBLANKS)) {
+            throw new RuntimeException('XML inválido.');
+        }
+
+        $this->xp = new DOMXPath($dom);
+        // O prefixo "n" aponta para o namespace do documento: NF-e e CT-e usam os mesmos caminhos relativos.
+        $this->xp->registerNamespace('n', $dom->documentElement?->namespaceURI === self::NS_CTE ? self::NS_CTE : self::NS_NFE);
+
+        return $dom;
     }
 
     /** @return array<string, mixed> */

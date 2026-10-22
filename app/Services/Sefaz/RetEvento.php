@@ -34,7 +34,9 @@ final readonly class RetEvento
             throw SefazException::invalidResponse();
         }
 
-        $info = $dom->getElementsByTagName('retEvento')->item(0)?->getElementsByTagName('infEvento')->item(0);
+        // NF-e responde retEnvEvento/retEvento; CT-e 4.00 (evento síncrono) responde retEventoCTe direto.
+        $ret = $dom->getElementsByTagName('retEvento')->item(0) ?? $dom->getElementsByTagName('retEventoCTe')->item(0);
+        $info = $ret?->getElementsByTagName('infEvento')->item(0);
         $lote = $dom->getElementsByTagName('retEnvEvento')->item(0);
 
         // Rejeição do lote inteiro (sem retEvento): usa o cStat/xMotivo do retEnvEvento.

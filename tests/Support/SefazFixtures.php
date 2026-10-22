@@ -67,6 +67,26 @@ final class SefazFixtures
             .'</retEnvEvento></nfeRecepcaoEventoNFResult></soap:Body></soap:Envelope>';
     }
 
+    public static function eventoCTe(string $cnpj, string $chave, string $tpEvento, int $seq = 1): string
+    {
+        $seqPad = str_pad((string) $seq, 3, '0', STR_PAD_LEFT);
+
+        return "<eventoCTe xmlns=\"http://www.portalfiscal.inf.br/cte\" versao=\"4.00\"><infEvento Id=\"ID{$tpEvento}{$chave}{$seqPad}\"><cOrgao>42</cOrgao><tpAmb>2</tpAmb>"
+            ."<CNPJ>{$cnpj}</CNPJ><chCTe>{$chave}</chCTe><dhEvento>2026-10-21T12:00:00-03:00</dhEvento><tpEvento>{$tpEvento}</tpEvento><nSeqEvento>{$seqPad}</nSeqEvento>"
+            .'<detEvento versaoEvento="4.00"><evPrestDesacordo><descEvento>Prestacao do Servico em Desacordo</descEvento><indDesacordoOper>1</indDesacordoOper><xObs>Frete cobrado em duplicidade</xObs></evPrestDesacordo></detEvento></infEvento></eventoCTe>';
+    }
+
+    public static function retEventoCTe(string $cStat, string $xMotivo, string $chave, string $tpEvento = '610110', int $seq = 1): string
+    {
+        $nProt = in_array($cStat, ['135', '136'], true) ? '<nProt>342260000054321</nProt>' : '';
+
+        return '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body>'
+            .'<cteRecepcaoEventoResult xmlns="http://www.portalfiscal.inf.br/cte/wsdl/CTeRecepcaoEventoV4">'
+            ."<retEventoCTe xmlns=\"http://www.portalfiscal.inf.br/cte\" versao=\"4.00\"><infEvento><tpAmb>2</tpAmb><verAplic>SVRS</verAplic><cOrgao>42</cOrgao><cStat>{$cStat}</cStat><xMotivo>{$xMotivo}</xMotivo>"
+            ."<chCTe>{$chave}</chCTe><tpEvento>{$tpEvento}</tpEvento><xEvento>Prestacao do Servico em Desacordo</xEvento><nSeqEvento>{$seq}</nSeqEvento><dhRegEvento>2026-10-21T12:00:05-03:00</dhRegEvento>{$nProt}</infEvento></retEventoCTe>"
+            .'</cteRecepcaoEventoResult></soap:Body></soap:Envelope>';
+    }
+
     private static function envelope(string $body): string
     {
         return '<?xml version="1.0" encoding="utf-8"?><soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope"><soap:Body>'

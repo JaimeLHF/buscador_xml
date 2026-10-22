@@ -45,7 +45,11 @@ final class FakeSefazGateway implements SefazGateway
     {
         $response = $this->respond('manifestar', "{$tipo->value}:{$chave}:{$nSeqEvento}");
 
-        return new EventoResponse(SefazFixtures::envEvento($company->cnpj, $chave, $tipo->value, $nSeqEvento), $response);
+        $request = $tipo->documentoTipo() === DocumentoTipo::Cte
+            ? SefazFixtures::eventoCTe($company->cnpj, $chave, $tipo->value, $nSeqEvento)
+            : SefazFixtures::envEvento($company->cnpj, $chave, $tipo->value, $nSeqEvento);
+
+        return new EventoResponse($request, $response);
     }
 
     private function respond(string $method, string $arg): string

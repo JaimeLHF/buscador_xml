@@ -430,9 +430,11 @@ new #[Title('Nota fiscal')] class extends Component {
 
         {{-- Coluna lateral: manifestação e eventos. --}}
         <div class="space-y-6">
-            @unless ($cte)
             <div class="space-y-3 border border-zinc-200 p-4 dark:border-zinc-700">
-                <flux:heading level="2">{{ __('Manifestação do destinatário') }}</flux:heading>
+                <flux:heading level="2">{{ $cte ? __('Desacordo do serviço') : __('Manifestação do destinatário') }}</flux:heading>
+                @if ($cte)
+                    <flux:text size="sm">{{ __('Se o frete foi cobrado errado ou o serviço não foi prestado como combinado, o tomador pode registrar o desacordo em até 45 dias.') }}</flux:text>
+                @endif
                 <flux:text size="sm">{{ __('Situação atual: :s', ['s' => $document->manifestacao_status?->label() ?? __('nenhuma')]) }}</flux:text>
 
                 @forelse ($this->manifestacoes as $tipo)
@@ -443,7 +445,6 @@ new #[Title('Nota fiscal')] class extends Component {
                     <flux:text size="sm">{{ auth()->user()->can('manifest', $document) ? __('Nenhuma manifestação disponível para este documento.') : __('Somente donos e administradores da organização podem manifestar.') }}</flux:text>
                 @endforelse
             </div>
-            @endunless
 
             <div class="space-y-3 border border-zinc-200 p-4 dark:border-zinc-700">
                 <flux:heading level="2">{{ __('Eventos') }}</flux:heading>
@@ -473,7 +474,7 @@ new #[Title('Nota fiscal')] class extends Component {
                 </div>
 
                 @if (App\Enums\TipoEvento::from($acao)->exigeJustificativa())
-                    <flux:textarea wire:model="justificativa" :label="__('Justificativa')" rows="3" required minlength="15" maxlength="255" />
+                    <flux:textarea wire:model="justificativa" :label="App\Enums\TipoEvento::from($acao) === App\Enums\TipoEvento::PrestacaoDesacordo ? __('O que está em desacordo') : __('Justificativa')" rows="3" required minlength="15" maxlength="255" />
                 @else
                     <flux:error name="justificativa" />
                 @endif
