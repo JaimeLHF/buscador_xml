@@ -64,3 +64,16 @@ select:focus[data-flux-control] {
 /* \[:where(&)\]:size-4 {
     @apply size-4;
 } */
+
+/* Menu principal com só três itens: alvos maiores e mais fáceis de ler. */
+.nav-principal [data-flux-sidebar-item] {
+    @apply h-11 gap-3.5 px-3;
+}
+
+.nav-principal [data-flux-sidebar-item] [data-content] {
+    @apply text-base;
+}
+
+.nav-principal [data-flux-sidebar-item] svg {
+    @apply size-5;
+}

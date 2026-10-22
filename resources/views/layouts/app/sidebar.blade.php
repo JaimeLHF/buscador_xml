@@ -13,7 +13,7 @@
 
             <livewire:organization-switcher />
 
-            <flux:sidebar.nav>
+            <flux:sidebar.nav class="nav-principal">
                 <flux:sidebar.item icon="inbox" :href="route('documents.index')" :current="request()->routeIs('documents.*')" wire:navigate>
                     {{ __('Notas') }}
                 </flux:sidebar.item>
