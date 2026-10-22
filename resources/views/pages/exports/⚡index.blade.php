@@ -6,7 +6,7 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Exportações')] class extends Component {
+new #[Title('Downloads')] class extends Component {
     #[Computed]
     public function exports()
     {
@@ -22,8 +22,8 @@ new #[Title('Exportações')] class extends Component {
 
 <section class="w-full space-y-6" @if ($this->pending) wire:poll.3s @endif>
     <div>
-        <flux:heading size="xl" level="1">{{ __('Exportações') }}</flux:heading>
-        <flux:subheading>{{ __('Arquivos ZIP ficam disponíveis por 7 dias.') }}</flux:subheading>
+        <flux:heading size="xl" level="1">{{ __('Downloads') }}</flux:heading>
+        <flux:subheading>{{ __('Arquivos ZIP gerados pelo botão "Baixar XMLs" da tela de notas. Ficam disponíveis por 7 dias.') }}</flux:subheading>
     </div>
 
     <flux:table>
@@ -52,7 +52,7 @@ new #[Title('Exportações')] class extends Component {
                 </flux:table.row>
             @empty
                 <flux:table.row>
-                    <flux:table.cell colspan="4" class="text-center">{{ __('Nenhuma exportação. Use o botão "Exportar XMLs" na lista de documentos.') }}</flux:table.cell>
+                    <flux:table.cell colspan="4" class="text-center">{{ __('Nenhum download ainda. Na tela de notas, filtre o que precisa e clique em "Baixar XMLs".') }}</flux:table.cell>
                 </flux:table.row>
             @endforelse
         </flux:table.rows>

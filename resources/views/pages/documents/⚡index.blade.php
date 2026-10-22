@@ -6,10 +6,10 @@ use App\Enums\Situacao;
 use App\Jobs\BuildXmlExport;
 use App\Jobs\SendConfirmacaoOperacao;
 use App\Models\DfeDocument;
+use App\Models\SyncState;
 use App\Queries\DocumentFilter;
 use App\Support\Fmt;
 use Flux\Flux;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
@@ -19,19 +19,18 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-new #[Title('Documentos')] class extends Component {
+new #[Title('Notas recebidas')] class extends Component {
     use WithPagination;
 
+    /** Aba da caixa de entrada: '' (todas), 'sem_xml' ou 'canceladas'. */
+    #[Url] public string $aba = '';
+    #[Url] public string $q = '';
     #[Url] public string $company_id = '';
     #[Url] public string $de = '';
     #[Url] public string $ate = '';
-    #[Url] public string $emitente = '';
     #[Url] public string $valor_min = '';
     #[Url] public string $valor_max = '';
-    #[Url] public string $situacao = '';
-    #[Url] public string $xml = '';
     #[Url] public string $manifestacao = '';
-    #[Url] public string $chave = '';
 
     /** @var list<int> */
     public array $selecionados = [];
@@ -39,30 +38,84 @@ new #[Title('Documentos')] class extends Component {
     /** Teto por envio: cada Confirmação é um evento assinado e enviado individualmente à SEFAZ. */
     private const LOTE_MAXIMO = 500;
 
+    /** Filtros guardados no painel "Filtros"; a busca e as abas ficam sempre à vista. */
+    private const FILTROS_EXTRAS = ['company_id', 'de', 'ate', 'valor_min', 'valor_max', 'manifestacao'];
+
     public function updated(string $property): void
     {
+        if ($property === 'aba') {
+            $this->selecionados = [];
+        }
+
         if ($property !== 'selecionados' && ! str_starts_with($property, 'selecionados.')) {
             $this->resetPage();
         }
     }
 
-    public function limpar(): void
+    public function limparFiltros(): void
     {
-        $this->reset();
+        $this->reset(self::FILTROS_EXTRAS);
         $this->resetPage();
     }
 
     /** @return array<string, string> */
     private function filters(): array
     {
-        return $this->only(['company_id', 'de', 'ate', 'emitente', 'valor_min', 'valor_max', 'situacao', 'xml', 'manifestacao', 'chave']);
+        return [
+            ...$this->only(self::FILTROS_EXTRAS),
+            'busca' => $this->q,
+            'xml' => $this->aba === 'sem_xml' ? 'resumo' : '',
+            'situacao' => match ($this->aba) {
+                'canceladas' => Situacao::Cancelada->value,
+                // Nota cancelada não tem XML a liberar: fica só na aba própria.
+                'sem_xml' => Situacao::Autorizada->value,
+                default => '',
+            },
+        ];
     }
 
-    /** Filtros escondidos no celular que estão em uso, para o botão "Filtros" avisar. */
     #[Computed]
     public function filtrosAtivos(): int
     {
-        return count(array_filter(Arr::except($this->filters(), ['emitente']), fn ($v) => $v !== ''));
+        return count(array_filter($this->only(self::FILTROS_EXTRAS), fn ($v) => $v !== ''));
+    }
+
+    /** @return array{sem_xml: int, canceladas: int} */
+    #[Computed]
+    public function contagens(): array
+    {
+        $base = fn () => DocumentFilter::apply(Auth::user()->currentOrganization, [...$this->only(self::FILTROS_EXTRAS), 'busca' => $this->q]);
+
+        return [
+            'sem_xml' => $base()->where('tem_xml_completo', false)->where('situacao', Situacao::Autorizada)->count(),
+            'canceladas' => $base()->where('situacao', Situacao::Cancelada)->count(),
+        ];
+    }
+
+    /** Quando o sistema falou com a SEFAZ por último e quando fala de novo (todas as empresas). */
+    #[Computed]
+    public function sincronizacao(): array
+    {
+        $states = SyncState::whereIn('company_id', Auth::user()->currentOrganization->companies()->select('id'));
+
+        return [
+            'ultima' => (clone $states)->max('last_checked_at'),
+            'proxima' => (clone $states)->whereNotNull('next_check_at')->min('next_check_at'),
+        ];
+    }
+
+    #[Computed]
+    public function alertas()
+    {
+        return Auth::user()->unreadNotifications()
+            ->where('data->organization_id', Auth::user()->current_organization_id)
+            ->latest()->limit(5)->get();
+    }
+
+    public function dispensarAlerta(string $id): void
+    {
+        Auth::user()->unreadNotifications()->whereKey($id)->update(['read_at' => now()]);
+        unset($this->alertas);
     }
 
     #[Computed]
@@ -75,7 +128,7 @@ new #[Title('Documentos')] class extends Component {
     public function documents()
     {
         return DocumentFilter::apply(Auth::user()->currentOrganization, $this->filters())
-            ->with('company:id,razao_social')
+            ->with('company:id,razao_social,nome_fantasia')
             ->orderByDesc('data_emissao')
             ->orderByDesc('id')
             ->paginate(25);
@@ -170,145 +223,204 @@ new #[Title('Documentos')] class extends Component {
         $this->redirectRoute('exports.index', navigate: true);
     }
 }; ?>
+<section class="mx-auto w-full max-w-5xl space-y-6">
+    {{-- Cabeçalho: o que é a tela, quando o sistema buscou notas e a ação principal (baixar). --}}
+    <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="space-y-1">
+            <flux:heading size="xl" level="1">{{ __('Notas recebidas') }}</flux:heading>
+            <flux:text>
+                @if ($this->sincronizacao['ultima'])
+                    {{ __('O sistema busca notas novas na SEFAZ sozinho. Última busca: :ultima.', ['ultima' => Fmt::relativo($this->sincronizacao['ultima'])]) }}
+                @else
+                    {{ __('Cadastre uma empresa com certificado para começar a receber notas.') }}
+                @endif
+            </flux:text>
+        </div>
 
-<section class="w-full space-y-6">
-    <div class="flex flex-wrap items-center justify-between gap-4">
-        <flux:heading size="xl" level="1">{{ __('Documentos') }}</flux:heading>
-
-        <flux:button icon="archive-box-arrow-down" wire:click="exportar" wire:confirm="{{ __('Gerar um ZIP com os XMLs de todos os documentos filtrados?') }}">
-            {{ __('Exportar XMLs (ZIP)') }}
+        <flux:button icon="arrow-down-tray" wire:click="exportar" wire:confirm="{{ __('Gerar um arquivo ZIP com os XMLs das :n notas desta lista?', ['n' => $this->documents->total()]) }}">
+            {{ __('Baixar XMLs') }}
         </flux:button>
     </div>
 
-    {{-- No celular só a busca por emitente fica à vista; os demais filtros abrem sob demanda para a lista aparecer logo. --}}
-    <div x-data="{ abertos: false }" class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="flex items-end gap-2">
-            <div class="min-w-0 flex-1">
-                <flux:input wire:model.live.debounce.400ms="emitente" :label="__('Emitente (nome ou CNPJ)')" />
-            </div>
-            <flux:button class="sm:hidden" icon="adjustments-horizontal" x-on:click="abertos = ! abertos" x-bind:aria-expanded="abertos" aria-controls="filtros-extras">
-                {{ __('Filtros') }}@if ($this->filtrosAtivos) · {{ $this->filtrosAtivos }}@endif
-            </flux:button>
-        </div>
+    @foreach ($this->alertas as $alerta)
+        <flux:callout :variant="$alerta->data['level'] ?? 'warning'" icon="bell-alert" wire:key="alerta-{{ $alerta->id }}">
+            <flux:callout.heading>{{ $alerta->data['message'] }}</flux:callout.heading>
+            <x-slot name="actions">
+                <flux:button size="sm" :href="$alerta->data['url']" wire:navigate>{{ __('Ver') }}</flux:button>
+                <flux:button size="sm" variant="ghost" wire:click="dispensarAlerta('{{ $alerta->id }}')">{{ __('Dispensar') }}</flux:button>
+            </x-slot>
+        </flux:callout>
+    @endforeach
 
-        <div id="filtros-extras" class="contents max-sm:hidden" x-bind:class="{ 'max-sm:hidden': ! abertos }">
+    {{-- Busca única + filtros extras numa gaveta. --}}
+    <div class="flex gap-2">
+        <div class="min-w-0 flex-1">
+            <flux:input wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Fornecedor, CNPJ ou chave de acesso')" :aria-label="__('Buscar notas')" clearable />
+        </div>
+        <flux:modal.trigger name="filtros">
+            <flux:button icon="adjustments-horizontal">
+                <span class="max-sm:sr-only">{{ __('Filtros') }}</span>
+                @if ($this->filtrosAtivos)
+                    <flux:badge size="sm" color="zinc" class="ms-1">{{ $this->filtrosAtivos }}</flux:badge>
+                @endif
+            </flux:button>
+        </flux:modal.trigger>
+    </div>
+
+    <flux:radio.group wire:model.live="aba" variant="segmented" :aria-label="__('Mostrar')">
+        <flux:radio value="" :label="__('Todas')" class="max-sm:px-2 max-sm:text-xs" />
+        <flux:radio value="sem_xml" :label="__('Sem XML (:n)', ['n' => number_format($this->contagens['sem_xml'], 0, ',', '.')])" class="max-sm:px-2 max-sm:text-xs" />
+        <flux:radio value="canceladas" :label="__('Canceladas (:n)', ['n' => number_format($this->contagens['canceladas'], 0, ',', '.')])" class="max-sm:px-2 max-sm:text-xs" />
+    </flux:radio.group>
+
+    @if ($aba === 'sem_xml')
+        <flux:callout icon="information-circle" color="zinc">
+            <flux:callout.text>
+                {{ __('Destas notas a SEFAZ entregou só um resumo. Notas com até 10 dias recebem o XML sozinhas; para as mais antigas (até 180 dias), marque as que a empresa reconhece e clique em "Confirmar operação".') }}
+            </flux:callout.text>
+        </flux:callout>
+
+        @if ($this->podeManifestar && $this->totalConfirmaveis > 0)
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <flux:text>
+                    {{ trans_choice(':count nota marcada|:count notas marcadas', count($selecionados), ['count' => count($selecionados)]) }}
+                </flux:text>
+                <div class="flex flex-wrap gap-2">
+                    @if ($selecionados)
+                        <flux:button size="sm" variant="ghost" wire:click="limparSelecao">{{ __('Desmarcar') }}</flux:button>
+                        <flux:modal.trigger name="confirmar-lote">
+                            <flux:button size="sm" variant="primary" icon="check-badge">{{ __('Confirmar operação') }}</flux:button>
+                        </flux:modal.trigger>
+                    @else
+                        <flux:button size="sm" variant="ghost" wire:click="selecionarFiltrados">{{ __('Marcar todas (:n)', ['n' => min($this->totalConfirmaveis, 500)]) }}</flux:button>
+                    @endif
+                </div>
+            </div>
+        @endif
+    @endif
+
+    {{-- Lista estilo caixa de entrada: fornecedor e estado em palavras, ações na própria linha. --}}
+    <div class="overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-700" wire:loading.class="opacity-60" wire:target="q,aba,company_id,de,ate,valor_min,valor_max,manifestacao,gotoPage,nextPage,previousPage">
+        <ul role="list" class="divide-y divide-zinc-200 dark:divide-zinc-700">
+            @forelse ($this->documents as $doc)
+                @php
+                    $estado = $doc->estado();
+                    $marcavel = $aba === 'sem_xml' && in_array($doc->id, $this->confirmaveisNaPagina, true);
+                @endphp
+                <li wire:key="doc-{{ $doc->id }}" class="flex items-center gap-3 px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/40">
+                    @if ($marcavel)
+                        <label class="-m-3 inline-flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                            <input type="checkbox" wire:model.live="selecionados" value="{{ $doc->id }}" aria-label="{{ __('Marcar nota de :emitente', ['emitente' => $doc->emitente_nome ?? $doc->chave]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
+                        </label>
+                    @endif
+
+                    <div class="min-w-0 flex-1">
+                        <a href="{{ route('documents.show', $doc) }}" wire:navigate class="line-clamp-2 font-medium text-zinc-900 hover:underline sm:line-clamp-1 dark:text-white">
+                            {{ $doc->emitente_nome ?? __('Fornecedor não informado') }}
+                        </a>
+                        <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm text-zinc-500 dark:text-zinc-400">
+                            <span class="tabular-nums">{{ Fmt::date($doc->data_emissao) }}</span>
+                            <span aria-hidden="true" class="max-sm:hidden">·</span>
+                            <span class="tabular-nums max-sm:hidden">{{ Fmt::cnpj($doc->emitente_cnpj) }}</span>
+                            @if ($this->companies->count() > 1)
+                                <span aria-hidden="true">·</span>
+                                <span class="truncate">{{ __('para :empresa', ['empresa' => $doc->company->nome_fantasia ?: $doc->company->razao_social]) }}</span>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="flex shrink-0 flex-col items-end gap-1">
+                        <span class="font-medium tabular-nums text-zinc-900 dark:text-white">{{ Fmt::money($doc->valor_total) }}</span>
+                        @switch($estado)
+                            @case('pronto')
+                                <flux:badge size="sm" color="green" icon="check">{{ __('XML pronto') }}</flux:badge>
+                                @break
+                            @case('aguardando')
+                                <flux:badge size="sm" color="sky" icon="clock">{{ __('XML a caminho') }}</flux:badge>
+                                @break
+                            @case('cancelada')
+                                <flux:badge size="sm" color="red" icon="x-mark">{{ __('Cancelada') }}</flux:badge>
+                                @break
+                            @default
+                                <flux:badge size="sm" color="zinc">{{ __('Só resumo') }}</flux:badge>
+                        @endswitch
+                    </div>
+
+                    <div class="hidden w-40 shrink-0 justify-end gap-1 md:flex">
+                        @if ($doc->tem_xml_completo)
+                            <flux:button size="sm" variant="ghost" icon="code-bracket" :href="route('documents.xml', $doc)" :aria-label="__('Baixar XML')">{{ __('XML') }}</flux:button>
+                            <flux:button size="sm" variant="ghost" icon="document" :href="route('documents.danfe', $doc)" target="_blank" :aria-label="__('Abrir DANFE')">{{ __('DANFE') }}</flux:button>
+                        @else
+                            <flux:button size="sm" variant="ghost" :href="route('documents.show', $doc)" wire:navigate>{{ __('Detalhes') }}</flux:button>
+                        @endif
+                    </div>
+                </li>
+            @empty
+                <li class="px-4 py-12 text-center">
+                    <flux:heading>
+                        @if ($q !== '' || $this->filtrosAtivos)
+                            {{ __('Nenhuma nota encontrada com essa busca.') }}
+                        @elseif ($aba === 'sem_xml')
+                            {{ __('Tudo certo: todas as notas já têm XML.') }}
+                        @elseif ($aba === 'canceladas')
+                            {{ __('Nenhuma nota cancelada.') }}
+                        @else
+                            {{ __('Nenhuma nota recebida ainda.') }}
+                        @endif
+                    </flux:heading>
+                    @if ($q !== '' || $this->filtrosAtivos)
+                        <flux:button size="sm" variant="ghost" class="mt-2" wire:click="$set('q', ''); limparFiltros()">{{ __('Limpar busca e filtros') }}</flux:button>
+                    @endif
+                </li>
+            @endforelse
+        </ul>
+    </div>
+
+    <flux:pagination :paginator="$this->documents" />
+
+    <flux:modal name="filtros" variant="flyout" class="w-full max-w-sm">
+        <div class="space-y-6">
+            <flux:heading size="lg" level="2">{{ __('Filtros') }}</flux:heading>
+
             @if ($this->companies->count() > 1)
-            <flux:select wire:model.live="company_id" :label="__('Empresa')">
-                <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
-                @foreach ($this->companies as $c)
-                    <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
-                @endforeach
-            </flux:select>
+                <flux:select wire:model.live="company_id" :label="__('Empresa')">
+                    <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
+                    @foreach ($this->companies as $c)
+                        <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
+                    @endforeach
+                </flux:select>
             @endif
-            <flux:input type="date" wire:model.live="de" :label="__('Emissão de')" />
-            <flux:input type="date" wire:model.live="ate" :label="__('Emissão até')" />
-            <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_min" :label="__('Valor mínimo')" />
-            <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_max" :label="__('Valor máximo')" />
-            <flux:select wire:model.live="situacao" :label="__('Situação')">
-                <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
-                @foreach (Situacao::cases() as $s)
-                    <flux:select.option :value="$s->value">{{ $s->label() }}</flux:select.option>
-                @endforeach
-            </flux:select>
-            <flux:select wire:model.live="xml" :label="__('XML')">
-                <flux:select.option value="">{{ __('Todos') }}</flux:select.option>
-                <flux:select.option value="completo">{{ __('Com XML completo') }}</flux:select.option>
-                <flux:select.option value="resumo">{{ __('Somente resumo') }}</flux:select.option>
-            </flux:select>
+
+            <div class="grid grid-cols-2 gap-4">
+                <flux:input type="date" wire:model.live="de" :label="__('Emitida de')" />
+                <flux:input type="date" wire:model.live="ate" :label="__('até')" />
+                <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_min" :label="__('Valor de (R$)')" />
+                <flux:input type="number" step="0.01" min="0" wire:model.live.debounce.400ms="valor_max" :label="__('até (R$)')" />
+            </div>
+
             <flux:select wire:model.live="manifestacao" :label="__('Manifestação')">
-                <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
+                <flux:select.option value="">{{ __('Qualquer') }}</flux:select.option>
                 <flux:select.option value="nenhuma">{{ __('Sem manifestação') }}</flux:select.option>
                 @foreach (ManifestacaoStatus::cases() as $m)
                     <flux:select.option :value="$m->value">{{ $m->label() }}</flux:select.option>
                 @endforeach
             </flux:select>
-            <div class="sm:col-span-2">
-                <flux:input wire:model.live.debounce.400ms="chave" :label="__('Chave de acesso')" class="font-mono" />
-            </div>
-            <div class="flex items-end">
-                <flux:button variant="ghost" wire:click="limpar">{{ __('Limpar filtros') }}</flux:button>
+
+            <div class="flex justify-between gap-2">
+                <flux:button variant="ghost" wire:click="limparFiltros">{{ __('Limpar filtros') }}</flux:button>
+                <flux:modal.close>
+                    <flux:button variant="primary">{{ __('Ver :n notas', ['n' => number_format($this->documents->total(), 0, ',', '.')]) }}</flux:button>
+                </flux:modal.close>
             </div>
         </div>
-    </div>
-
-    @if ($this->podeManifestar && $this->totalConfirmaveis > 0)
-        <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-700">
-            <flux:text>
-                {{ trans_choice(':count nota selecionada|:count notas selecionadas', count($selecionados), ['count' => count($selecionados)]) }}
-                · {{ __(':n filtradas podem receber a Confirmação', ['n' => $this->totalConfirmaveis]) }}
-            </flux:text>
-            <div class="flex flex-wrap gap-2">
-                <flux:button size="sm" variant="ghost" wire:click="selecionarFiltrados">{{ __('Selecionar todas as filtradas') }}</flux:button>
-                @if ($selecionados)
-                    <flux:button size="sm" variant="ghost" wire:click="limparSelecao">{{ __('Limpar seleção') }}</flux:button>
-                    <flux:modal.trigger name="confirmar-lote">
-                        <flux:button size="sm" variant="primary" icon="check-badge">{{ __('Confirmar operação') }}</flux:button>
-                    </flux:modal.trigger>
-                @endif
-            </div>
-        </div>
-    @endif
-
-    <flux:table :paginate="$this->documents">
-        <flux:table.columns>
-            @if ($this->podeManifestar)
-                <flux:table.column class="w-8"></flux:table.column>
-            @endif
-            <flux:table.column class="max-sm:hidden">{{ __('Emissão') }}</flux:table.column>
-            <flux:table.column>{{ __('Emitente') }}</flux:table.column>
-            @if ($this->companies->count() > 1)
-                <flux:table.column class="max-md:hidden">{{ __('Destinatário') }}</flux:table.column>
-            @endif
-            <flux:table.column align="end" class="max-sm:hidden">{{ __('Valor') }}</flux:table.column>
-            <flux:table.column>{{ __('Situação') }}</flux:table.column>
-            <flux:table.column class="max-sm:hidden">{{ __('Manifestação') }}</flux:table.column>
-        </flux:table.columns>
-        <flux:table.rows>
-            @forelse ($this->documents as $doc)
-                <flux:table.row :key="$doc->id">
-                    @if ($this->podeManifestar)
-                        <flux:table.cell>
-                            @if (in_array($doc->id, $this->confirmaveisNaPagina, true))
-                                {{-- Rótulo de 44px em volta da caixa: alvo de toque confortável sem alargar a linha. --}}
-                                <label class="-m-3 inline-flex size-11 cursor-pointer items-center justify-center">
-                                    <input type="checkbox" wire:model.live="selecionados" value="{{ $doc->id }}" aria-label="{{ __('Selecionar nota de :emitente', ['emitente' => $doc->emitente_nome ?? $doc->chave]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
-                                </label>
-                            @endif
-                        </flux:table.cell>
-                    @endif
-                    <flux:table.cell class="whitespace-nowrap max-sm:hidden">{{ Fmt::date($doc->data_emissao) }}</flux:table.cell>
-                    <flux:table.cell class="max-sm:whitespace-normal">
-                        <flux:link :href="route('documents.show', $doc)" wire:navigate>{{ $doc->emitente_nome ?? $doc->chave }}</flux:link>
-                        <flux:text size="sm" class="font-mono">{{ Fmt::cnpj($doc->emitente_cnpj) }}</flux:text>
-                        {{-- No celular, data e valor descem para baixo do emitente em vez de exigir rolagem lateral. --}}
-                        <flux:text size="sm" class="mt-1 tabular-nums sm:hidden">{{ Fmt::date($doc->data_emissao) }} · {{ Fmt::money($doc->valor_total) }}</flux:text>
-                    </flux:table.cell>
-                    @if ($this->companies->count() > 1)
-                        <flux:table.cell class="max-md:hidden">{{ $doc->company->razao_social }}</flux:table.cell>
-                    @endif
-                    <flux:table.cell align="end" class="tabular-nums whitespace-nowrap max-sm:hidden">{{ Fmt::money($doc->valor_total) }}</flux:table.cell>
-                    <flux:table.cell>
-                        <flux:badge size="sm" :color="match ($doc->situacao) { Situacao::Autorizada => 'green', Situacao::Cancelada => 'red', default => 'amber' }">{{ $doc->situacao->label() }}</flux:badge>
-                        @unless ($doc->tem_xml_completo)
-                            <flux:badge size="sm" color="zinc">{{ __('resumo') }}</flux:badge>
-                        @endunless
-                    </flux:table.cell>
-                    <flux:table.cell class="max-sm:hidden">{{ $doc->manifestacao_status?->label() ?? '—' }}</flux:table.cell>
-                </flux:table.row>
-            @empty
-                <flux:table.row>
-                    <flux:table.cell colspan="7" class="text-center">{{ __('Nenhum documento encontrado.') }}</flux:table.cell>
-                </flux:table.row>
-            @endforelse
-        </flux:table.rows>
-    </flux:table>
+    </flux:modal>
 
     <flux:modal name="confirmar-lote" class="md:w-[32rem]">
         <form wire:submit="confirmarLote" class="space-y-6">
             <div>
                 <flux:heading size="lg" level="2">{{ __('Confirmar operação de :count notas', ['count' => count($selecionados)]) }}</flux:heading>
                 <flux:text class="mt-2">{{ __('A Confirmação declara à SEFAZ que a compra aconteceu e a mercadoria foi recebida. Cada evento é assinado com o certificado da empresa e não pode ser desfeito.') }}</flux:text>
-                <flux:text class="mt-2">{{ __('Envie apenas notas que a empresa reconhece. Para notas desconhecidas, use a tela da nota.') }}</flux:text>
+                <flux:text class="mt-2">{{ __('Envie apenas notas que a empresa reconhece. Para notas desconhecidas, abra a nota e use "Desconhecimento".') }}</flux:text>
             </div>
 
             <div class="flex justify-end gap-2">

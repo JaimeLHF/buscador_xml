@@ -7,33 +7,22 @@
         <a href="#conteudo" class="sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:ring-2 focus:ring-zinc-800 dark:focus:bg-zinc-900 dark:focus:ring-white">{{ __('Pular para o conteúdo') }}</a>
         <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:sidebar.header>
-                <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
+                <x-app-logo :sidebar="true" href="{{ route('documents.index') }}" wire:navigate />
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
             <livewire:organization-switcher />
 
             <flux:sidebar.nav>
-                <flux:sidebar.group :heading="__('Painel')" class="grid">
-                    <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
-                        {{ __('Dashboard') }}
-                    </flux:sidebar.item>
-                    <flux:sidebar.item icon="building-office" :href="route('companies.index')" :current="request()->routeIs('companies.*')" wire:navigate>
-                        {{ __('Empresas') }}
-                    </flux:sidebar.item>
-                    <flux:sidebar.item icon="document-text" :href="route('documents.index')" :current="request()->routeIs('documents.*')" wire:navigate>
-                        {{ __('Documentos') }}
-                    </flux:sidebar.item>
-                    <flux:sidebar.item icon="archive-box-arrow-down" :href="route('exports.index')" :current="request()->routeIs('exports.*')" wire:navigate>
-                        {{ __('Exportações') }}
-                    </flux:sidebar.item>
-                    <flux:sidebar.item icon="signal" :href="route('sefaz-log')" :current="request()->routeIs('sefaz-log')" wire:navigate>
-                        {{ __('Log SEFAZ') }}
-                    </flux:sidebar.item>
-                    <flux:sidebar.item icon="users" :href="route('organizations.members')" :current="request()->routeIs('organizations.members')" wire:navigate>
-                        {{ __('Membros') }}
-                    </flux:sidebar.item>
-                </flux:sidebar.group>
+                <flux:sidebar.item icon="inbox" :href="route('documents.index')" :current="request()->routeIs('documents.*')" wire:navigate>
+                    {{ __('Notas') }}
+                </flux:sidebar.item>
+                <flux:sidebar.item icon="building-office" :href="route('companies.index')" :current="request()->routeIs('companies.*', 'sefaz-log')" wire:navigate>
+                    {{ __('Empresas') }}
+                </flux:sidebar.item>
+                <flux:sidebar.item icon="arrow-down-tray" :href="route('exports.index')" :current="request()->routeIs('exports.*')" wire:navigate>
+                    {{ __('Downloads') }}
+                </flux:sidebar.item>
             </flux:sidebar.nav>
 
             <flux:spacer />
@@ -73,6 +62,9 @@
                     <flux:menu.separator />
 
                     <flux:menu.radio.group>
+                        <flux:menu.item :href="route('organizations.members')" icon="users" wire:navigate>
+                            {{ __('Equipe') }}
+                        </flux:menu.item>
                         <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
                             {{ __('Settings') }}
                         </flux:menu.item>

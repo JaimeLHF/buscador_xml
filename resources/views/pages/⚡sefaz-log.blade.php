@@ -10,7 +10,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
 
-new #[Title('Log SEFAZ')] class extends Component {
+new #[Title('Histórico de buscas')] class extends Component {
     use WithPagination;
 
     #[Url] public string $company_id = '';
@@ -43,7 +43,11 @@ new #[Title('Log SEFAZ')] class extends Component {
 }; ?>
 
 <section class="w-full space-y-6">
-    <flux:heading size="xl" level="1">{{ __('Log de requisições à SEFAZ') }}</flux:heading>
+    <div class="space-y-1">
+        <flux:link :href="route('companies.index')" wire:navigate class="text-sm">← {{ __('Empresas') }}</flux:link>
+        <flux:heading size="xl" level="1">{{ __('Histórico de buscas na SEFAZ') }}</flux:heading>
+        <flux:text>{{ __('Cada conversa do sistema com a SEFAZ: buscas de notas, downloads de XML e manifestações.') }}</flux:text>
+    </div>
 
     <div class="flex flex-wrap items-end gap-4">
         @if ($this->companies->count() > 1)

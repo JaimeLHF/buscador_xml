@@ -52,12 +52,12 @@ it('alerts when consumo indevido repeats', function () {
     Notification::assertSentToTimes($this->owner, CompanyBlocked::class, 1);
 });
 
-it('shows unread alerts of the current organization on the dashboard', function () {
+it('shows unread alerts of the current organization on the inbox', function () {
     $this->owner->notify(new CompanyBlocked($this->company, 3));
     $other = User::factory()->withOrganization()->create();
 
-    Livewire::actingAs($this->owner)->test('pages::dashboard')
+    Livewire::actingAs($this->owner)->test('pages::documents.index')
         ->assertSee('bloqueios seguidos')
-        ->call('dismiss', $this->owner->unreadNotifications()->first()->id)
+        ->call('dispensarAlerta', $this->owner->unreadNotifications()->first()->id)
         ->assertDontSee('bloqueios seguidos');
 });
