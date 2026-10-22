@@ -3,10 +3,10 @@
 namespace App\Models;
 
 use App\Enums\DfeSchema;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Carbon\CarbonImmutable;
 
 /**
  * @property int $id
