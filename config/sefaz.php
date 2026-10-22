@@ -26,6 +26,9 @@ return [
     // A SEFAZ só aceita a Ciência da Operação até 10 dias após a autorização da NF-e (rejeição 596).
     'ciencia_prazo_dias' => (int) env('SEFAZ_CIENCIA_PRAZO_DIAS', 10),
 
+    // Confirmação, Desconhecimento e Operação não Realizada: até 180 dias da autorização.
+    'confirmacao_prazo_dias' => (int) env('SEFAZ_CONFIRMACAO_PRAZO_DIAS', 180),
+
     // Alerta por e-mail/painel quando a empresa acumula esta quantidade de 656 seguidos.
     'blocked_alert_after' => (int) env('SEFAZ_BLOCKED_ALERT_AFTER', 3),
 

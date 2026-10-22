@@ -4,10 +4,13 @@ use App\Enums\ExportStatus;
 use App\Enums\ManifestacaoStatus;
 use App\Enums\Situacao;
 use App\Jobs\BuildXmlExport;
+use App\Jobs\SendConfirmacaoOperacao;
+use App\Models\DfeDocument;
 use App\Queries\DocumentFilter;
 use App\Support\Fmt;
 use Flux\Flux;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -29,9 +32,17 @@ new #[Title('Documentos')] class extends Component {
     #[Url] public string $manifestacao = '';
     #[Url] public string $chave = '';
 
+    /** @var list<int> */
+    public array $selecionados = [];
+
+    /** Teto por envio: cada Confirmação é um evento assinado e enviado individualmente à SEFAZ. */
+    private const LOTE_MAXIMO = 500;
+
     public function updated(string $property): void
     {
-        $this->resetPage();
+        if ($property !== 'selecionados' && ! str_starts_with($property, 'selecionados.')) {
+            $this->resetPage();
+        }
     }
 
     public function limpar(): void
@@ -60,6 +71,72 @@ new #[Title('Documentos')] class extends Component {
             ->orderByDesc('data_emissao')
             ->orderByDesc('id')
             ->paginate(25);
+    }
+
+    #[Computed]
+    public function podeManifestar(): bool
+    {
+        return (bool) Auth::user()->roleIn(Auth::user()->current_organization_id)?->canManage();
+    }
+
+    /** @return list<int> IDs da página atual que aceitam a Confirmação em lote. */
+    #[Computed]
+    public function confirmaveisNaPagina(): array
+    {
+        if (! $this->podeManifestar) {
+            return [];
+        }
+
+        return DfeDocument::query()->confirmaveisEmLote()
+            ->whereIn('id', $this->documents->pluck('id'))
+            ->pluck('id')->all();
+    }
+
+    #[Computed]
+    public function totalConfirmaveis(): int
+    {
+        return $this->podeManifestar ? DocumentFilter::apply(Auth::user()->currentOrganization, $this->filters())->confirmaveisEmLote()->count() : 0;
+    }
+
+    public function selecionarFiltrados(): void
+    {
+        $this->selecionados = DocumentFilter::apply(Auth::user()->currentOrganization, $this->filters())
+            ->confirmaveisEmLote()
+            ->orderByDesc('data_emissao')
+            ->limit(self::LOTE_MAXIMO)
+            ->pluck('id')->all();
+    }
+
+    public function limparSelecao(): void
+    {
+        $this->selecionados = [];
+    }
+
+    public function confirmarLote(): void
+    {
+        $ids = array_slice(array_values(array_unique(array_map('intval', $this->selecionados))), 0, self::LOTE_MAXIMO);
+
+        // Revalida tudo no servidor: a seleção vem do navegador.
+        $documents = DocumentFilter::apply(Auth::user()->currentOrganization, [])
+            ->confirmaveisEmLote()
+            ->whereIn('id', $ids)
+            ->with('company')
+            ->get()
+            ->filter(fn (DfeDocument $doc) => Gate::allows('manifest', $doc))
+            ->values();
+
+        foreach ($documents as $i => $doc) {
+            $doc->update(['manifestacao_status' => ManifestacaoStatus::ConfirmacaoPendente]);
+            SendConfirmacaoOperacao::dispatch($doc)->delay(now()->addSeconds($i * 2));
+        }
+
+        $this->selecionados = [];
+        unset($this->documents, $this->confirmaveisNaPagina, $this->totalConfirmaveis);
+        Flux::modal('confirmar-lote')->close();
+
+        $documents->isEmpty()
+            ? Flux::toast(variant: 'warning', text: __('Nenhuma das notas selecionadas pode receber a Confirmação.'))
+            : Flux::toast(variant: 'success', text: __(':n Confirmações enviadas para a fila. O XML completo chega em seguida.', ['n' => $documents->count()]));
     }
 
     public function exportar(): void
@@ -131,8 +208,29 @@ new #[Title('Documentos')] class extends Component {
         </div>
     </div>
 
+    @if ($this->podeManifestar && $this->totalConfirmaveis > 0)
+        <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 px-4 py-3 dark:border-zinc-700">
+            <flux:text>
+                {{ trans_choice(':count nota selecionada|:count notas selecionadas', count($selecionados), ['count' => count($selecionados)]) }}
+                · {{ __(':n filtradas podem receber a Confirmação', ['n' => $this->totalConfirmaveis]) }}
+            </flux:text>
+            <div class="flex flex-wrap gap-2">
+                <flux:button size="sm" variant="ghost" wire:click="selecionarFiltrados">{{ __('Selecionar todas as filtradas') }}</flux:button>
+                @if ($selecionados)
+                    <flux:button size="sm" variant="ghost" wire:click="limparSelecao">{{ __('Limpar seleção') }}</flux:button>
+                    <flux:modal.trigger name="confirmar-lote">
+                        <flux:button size="sm" variant="primary" icon="check-badge">{{ __('Confirmar operação') }}</flux:button>
+                    </flux:modal.trigger>
+                @endif
+            </div>
+        </div>
+    @endif
+
     <flux:table :paginate="$this->documents">
         <flux:table.columns>
+            @if ($this->podeManifestar)
+                <flux:table.column class="w-8"></flux:table.column>
+            @endif
             <flux:table.column>{{ __('Emissão') }}</flux:table.column>
             <flux:table.column>{{ __('Emitente') }}</flux:table.column>
             <flux:table.column>{{ __('Destinatário') }}</flux:table.column>
@@ -143,6 +241,13 @@ new #[Title('Documentos')] class extends Component {
         <flux:table.rows>
             @forelse ($this->documents as $doc)
                 <flux:table.row :key="$doc->id">
+                    @if ($this->podeManifestar)
+                        <flux:table.cell>
+                            @if (in_array($doc->id, $this->confirmaveisNaPagina, true))
+                                <flux:checkbox wire:model.live="selecionados" :value="$doc->id" :aria-label="__('Selecionar nota')" />
+                            @endif
+                        </flux:table.cell>
+                    @endif
                     <flux:table.cell class="whitespace-nowrap">{{ Fmt::date($doc->data_emissao) }}</flux:table.cell>
                     <flux:table.cell>
                         <flux:link :href="route('documents.show', $doc)" wire:navigate>{{ $doc->emitente_nome ?? $doc->chave }}</flux:link>
@@ -160,9 +265,26 @@ new #[Title('Documentos')] class extends Component {
                 </flux:table.row>
             @empty
                 <flux:table.row>
-                    <flux:table.cell colspan="6" class="text-center">{{ __('Nenhum documento encontrado.') }}</flux:table.cell>
+                    <flux:table.cell colspan="7" class="text-center">{{ __('Nenhum documento encontrado.') }}</flux:table.cell>
                 </flux:table.row>
             @endforelse
         </flux:table.rows>
     </flux:table>
+
+    <flux:modal name="confirmar-lote" class="md:w-[32rem]">
+        <form wire:submit="confirmarLote" class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Confirmar operação de :count notas', ['count' => count($selecionados)]) }}</flux:heading>
+                <flux:text class="mt-2">{{ __('A Confirmação declara à SEFAZ que a compra aconteceu e a mercadoria foi recebida. Cada evento é assinado com o certificado da empresa e não pode ser desfeito.') }}</flux:text>
+                <flux:text class="mt-2">{{ __('Envie apenas notas que a empresa reconhece. Para notas desconhecidas, use a tela da nota.') }}</flux:text>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">{{ __('Cancelar') }}</flux:button>
+                </flux:modal.close>
+                <flux:button type="submit" variant="danger">{{ __('Confirmar e enviar') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 </section>

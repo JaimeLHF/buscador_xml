@@ -106,6 +106,7 @@ class ManifestacaoService
             (bool) $status?->isConclusive() => 'A manifestação desta NF-e já foi concluída.',
             $tipo === TipoEvento::CienciaOperacao && $status === ManifestacaoStatus::Ciencia => 'A Ciência da Operação já foi registrada.',
             $tipo === TipoEvento::CienciaOperacao && ! $document->cienciaNoPrazo() => 'O prazo de 10 dias para a Ciência expirou. Use Confirmação, Desconhecimento ou Operação não Realizada.',
+            $tipo !== TipoEvento::CienciaOperacao && ! $document->conclusivaNoPrazo() => 'O prazo de 180 dias para a manifestação conclusiva expirou.',
             default => null,
         };
     }

@@ -8,6 +8,7 @@ use App\Enums\ManifestacaoStatus;
 use App\Enums\Situacao;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -50,6 +51,27 @@ class DfeDocument extends Model
     {
         return $this->data_emissao !== null
             && $this->data_emissao->greaterThan(now()->subDays(config('sefaz.ciencia_prazo_dias'))->addHour());
+    }
+
+    public function conclusivaNoPrazo(): bool
+    {
+        return $this->data_emissao !== null
+            && $this->data_emissao->greaterThan(now()->subDays(config('sefaz.confirmacao_prazo_dias'))->addHour());
+    }
+
+    /**
+     * Resumos que ainda podem receber a Confirmação da Operação em lote: não cancelados, sem manifestação
+     * conclusiva ou pendente e dentro do prazo de 180 dias.
+     *
+     * @param  Builder<DfeDocument>  $query
+     */
+    public function scopeConfirmaveisEmLote(Builder $query): void
+    {
+        $query->where('tem_xml_completo', false)
+            ->where('situacao', '!=', Situacao::Cancelada->value)
+            ->where('data_emissao', '>', now()->subDays(config('sefaz.confirmacao_prazo_dias'))->addHour())
+            ->where(fn (Builder $q) => $q->whereNull('manifestacao_status')
+                ->orWhereIn('manifestacao_status', [ManifestacaoStatus::Ciencia->value, ManifestacaoStatus::Erro->value]));
     }
 
     /** @return BelongsTo<Company, $this> */

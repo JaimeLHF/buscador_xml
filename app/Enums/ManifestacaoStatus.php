@@ -6,6 +6,7 @@ enum ManifestacaoStatus: string
 {
     case CienciaPendente = 'ciencia_pendente';
     case Ciencia = 'ciencia';
+    case ConfirmacaoPendente = 'confirmacao_pendente';
     case Confirmada = 'confirmada';
     case Desconhecida = 'desconhecida';
     case NaoRealizada = 'nao_realizada';
@@ -33,6 +34,7 @@ enum ManifestacaoStatus: string
         return match ($this) {
             self::CienciaPendente => 'Ciência pendente',
             self::Ciencia => 'Ciência da Operação',
+            self::ConfirmacaoPendente => 'Confirmação pendente',
             self::Confirmada => 'Operação confirmada',
             self::Desconhecida => 'Operação desconhecida',
             self::NaoRealizada => 'Operação não realizada',

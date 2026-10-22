@@ -8,6 +8,7 @@ use App\Enums\Situacao;
 use App\Enums\TipoEvento;
 use App\Jobs\FetchFullDocument;
 use App\Jobs\SendCienciaOperacao;
+use App\Jobs\SendConfirmacaoOperacao;
 use App\Models\Company;
 use App\Models\DfeDocument;
 use App\Models\User;
@@ -218,4 +219,68 @@ it('does not send Ciência after the 10 day SEFAZ deadline', function () {
     expect($document->manifestacao_status)->toBeNull()
         ->and(app(ManifestacaoService::class)->disponiveis($document))->not->toContain(TipoEvento::CienciaOperacao)
         ->and(fn () => app(ManifestacaoService::class)->manifestar($document, TipoEvento::CienciaOperacao))->toThrow(ManifestacaoException::class, 'prazo');
+});
+
+it('queues bulk Confirmação only for eligible notes the admin selected', function () {
+    Queue::fake();
+    $this->company->update(['manifestacao_automatica' => false]);
+    $document = receiveResumo($this->company);
+    $copia = fn (array $attrs, ?Company $company = null) => tap($document->replicate()->fill(['chave' => str_pad((string) random_int(1, 999999), 44, '4', STR_PAD_LEFT), ...$attrs]), function (DfeDocument $d) use ($company) {
+        $d->company_id = ($company ?? $this->company)->id;
+        $d->save();
+    });
+    $cancelada = $copia(['situacao' => Situacao::Cancelada]);
+    $antiga = $copia(['data_emissao' => now()->subDays(200)]);
+    $outraOrg = $copia([], Company::factory()->create());
+
+    Livewire::actingAs($this->user)->test('pages::documents.index')
+        ->call('selecionarFiltrados')
+        ->assertSet('selecionados', [$document->id])
+        ->set('selecionados', [$document->id, $cancelada->id, $antiga->id, $outraOrg->id])
+        ->call('confirmarLote')
+        ->assertSet('selecionados', []);
+
+    Queue::assertPushed(SendConfirmacaoOperacao::class, 1);
+    Queue::assertPushed(SendConfirmacaoOperacao::class, fn ($job) => $job->document->is($document));
+    expect($document->refresh()->manifestacao_status)->toBe(ManifestacaoStatus::ConfirmacaoPendente)
+        ->and($antiga->refresh()->manifestacao_status)->toBeNull();
+});
+
+it('does not let members send bulk Confirmação', function () {
+    Queue::fake();
+    $this->company->update(['manifestacao_automatica' => false]);
+    $document = receiveResumo($this->company);
+    $member = User::factory()->create();
+    $this->user->currentOrganization->addMember($member, OrganizationRole::Member);
+    $member->switchOrganization($this->user->currentOrganization);
+
+    Livewire::actingAs($member)->test('pages::documents.index')
+        ->assertDontSee('Selecionar todas as filtradas')
+        ->set('selecionados', [$document->id])
+        ->call('confirmarLote');
+
+    Queue::assertNothingPushed();
+    expect($document->refresh()->manifestacao_status)->toBeNull();
+});
+
+it('sends the queued Confirmação and schedules the full XML fetch', function () {
+    $this->company->update(['manifestacao_automatica' => false]);
+    $document = receiveResumo($this->company);
+    $document->update(['manifestacao_status' => ManifestacaoStatus::ConfirmacaoPendente]);
+    fakeSefaz()->push(F::retEvento('135', 'Evento registrado e vinculado a NF-e', CH, '210200'));
+
+    (new SendConfirmacaoOperacao($document))->handle(app(ManifestacaoService::class));
+
+    expect($document->refresh()->manifestacao_status)->toBe(ManifestacaoStatus::Confirmada)
+        ->and(fakeSefaz()->calls[0]['arg'])->toBe('210200:'.CH.':1');
+    Queue::assertPushed(FetchFullDocument::class);
+});
+
+it('blocks conclusive manifestations after 180 days', function () {
+    $this->company->update(['manifestacao_automatica' => false]);
+    $document = receiveResumo($this->company);
+    $this->travelTo(now()->addDays(185));
+
+    expect(app(ManifestacaoService::class)->disponiveis($document))->toBe([])
+        ->and(fn () => app(ManifestacaoService::class)->manifestar($document, TipoEvento::ConfirmacaoOperacao))->toThrow(ManifestacaoException::class, '180 dias');
 });
