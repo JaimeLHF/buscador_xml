@@ -109,7 +109,7 @@ new #[Title('Empresa')] class extends Component {
                     <flux:table.row :key="$doc->id">
                         <flux:table.cell>{{ $doc->data_emissao?->timezone('America/Sao_Paulo')->format('d/m/Y') }}</flux:table.cell>
                         <flux:table.cell><flux:link :href="route('documents.show', $doc)" wire:navigate>{{ $doc->emitente_nome }}</flux:link></flux:table.cell>
-                        <flux:table.cell align="end">{{ number_format((float) $doc->valor_total, 2, ',', '.') }}</flux:table.cell>
+                        <flux:table.cell align="end" class="tabular-nums whitespace-nowrap">{{ App\Support\Fmt::money($doc->valor_total) }}</flux:table.cell>
                         <flux:table.cell>{{ $doc->situacao->label() }}{{ $doc->tem_xml_completo ? '' : ' · '.__('resumo') }}</flux:table.cell>
                         <flux:table.cell>{{ $doc->manifestacao_status?->label() ?? '—' }}</flux:table.cell>
                     </flux:table.row>

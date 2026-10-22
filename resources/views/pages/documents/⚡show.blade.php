@@ -120,7 +120,7 @@ new #[Title('Documento')] class extends Component {
                     {{ $tipo->label() }}
                 </flux:button>
             @empty
-                <flux:text>{{ __('Nenhuma manifestação disponível para este documento.') }}</flux:text>
+                <flux:text>{{ auth()->user()->can('manifest', $document) ? __('Nenhuma manifestação disponível para este documento.') : __('Somente donos e administradores da organização podem manifestar.') }}</flux:text>
             @endforelse
         </flux:card>
     </div>
