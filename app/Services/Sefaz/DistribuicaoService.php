@@ -74,8 +74,8 @@ class DistribuicaoService
             }
         }
 
-        // Ainda há documentos: o scheduler retoma no próximo minuto, liberando o worker para outras empresas.
-        $state->update(['next_check_at' => now()]);
+        // Ainda há documentos: aguarda um intervalo curto antes de retomar, evitando 656 por excesso de chamadas.
+        $state->update(['next_check_at' => now()->addMinutes(config('sefaz.wait_between_runs_minutes'))]);
 
         return SyncOutcome::MorePending;
     }

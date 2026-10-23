@@ -17,8 +17,11 @@ return [
     'retry_base_minutes' => (int) env('SEFAZ_RETRY_BASE_MINUTES', 2),
     'retry_max_minutes' => (int) env('SEFAZ_RETRY_MAX_MINUTES', 60),
 
-    // Páginas de distNSU por execução do job; se ainda houver documentos, continua no minuto seguinte.
-    'max_pages_per_run' => (int) env('SEFAZ_MAX_PAGES', 20),
+    // Páginas de distNSU por execução do job; se ainda houver documentos, aguarda o cooldown abaixo.
+    'max_pages_per_run' => (int) env('SEFAZ_MAX_PAGES', 10),
+
+    // Minutos de espera entre rodadas quando ainda há documentos pendentes (evita 656).
+    'wait_between_runs_minutes' => (int) env('SEFAZ_WAIT_BETWEEN_RUNS', 5),
 
     // Limite da NT para consChNFe/consNSU: 20 consultas por hora por CNPJ.
     'cons_chave_per_hour' => 20,
