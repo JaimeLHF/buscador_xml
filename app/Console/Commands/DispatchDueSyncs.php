@@ -9,9 +9,9 @@ use App\Jobs\SyncCompanyDfe;
 use App\Jobs\SyncCompanySefSc;
 use App\Models\Company;
 use App\Models\SyncState;
+use App\Services\Sefaz\SyncProgress;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
-use App\Services\Sefaz\SyncProgress;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 
