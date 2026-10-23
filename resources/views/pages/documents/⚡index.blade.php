@@ -756,7 +756,7 @@ new #[Title('Notas recebidas')] class extends Component {
             <flux:heading size="lg" level="2">{{ __('Filtros') }}</flux:heading>
 
             <flux:select wire:model.live="tipo" :label="__('Tipo de documento')">
-                <flux:select.option value="">{{ __('NF-e e CT-e') }}</flux:select.option>
+                <flux:select.option value="">{{ __('Todos') }}</flux:select.option>
                 @foreach (App\Enums\DocumentoTipo::cases() as $t)
                     <flux:select.option :value="$t->value">{{ $t->label() }}</flux:select.option>
                 @endforeach
