@@ -121,7 +121,14 @@ class DistribuicaoService
             return $ret->hasMore() ? SyncOutcome::MorePending : SyncOutcome::UpToDate;
         }
 
-        $this->advance($state, $ret);
+        // Na 656 o ultNSU retornado é o NSU global corrente, não um ponto de retomada confiável.
+        // Avançar aqui faria o sync pular todos os documentos anteriores a esse valor.
+        if (! $ret->is(CStat::ConsumoIndevido)) {
+            $this->advance($state, $ret);
+        } elseif ($ret->maxNsu !== null) {
+            $state->max_nsu = $ret->maxNsu;
+        }
+
         $state->next_check_at = $this->waitOneHour($company, $state->tipo, $ret->is(CStat::ConsumoIndevido) ? 'wait_after_656_minutes' : 'wait_after_no_docs_minutes');
 
         if ($ret->is(CStat::ConsumoIndevido)) {
