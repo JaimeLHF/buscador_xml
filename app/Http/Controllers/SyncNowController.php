@@ -12,12 +12,13 @@ use App\Services\SefSc\SefScDistribuicaoService;
 use App\Support\Fmt;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 
 /** "Sincronizar agora" nunca fura a espera da NT: se ainda não é hora, informa quando poderá rodar. */
 class SyncNowController extends Controller
 {
-    public function __invoke(Company $company, CnpjCooldown $cooldown): RedirectResponse
+    public function __invoke(Company $company, Request $request, CnpjCooldown $cooldown): RedirectResponse
     {
         Gate::authorize('view', $company);
 
@@ -25,29 +26,45 @@ class SyncNowController extends Controller
             return $this->sefSc($company);
         }
 
-        $state = $company->syncState(DocumentoTipo::Nfe);
-        $until = collect([$state->next_check_at, $cooldown->until($company)])->filter(fn (?CarbonImmutable $d): bool => (bool) $d?->isFuture())->max();
-        $cte = $company->syncState(DocumentoTipo::Cte);
-        $cteLiberado = ! collect([$cte->next_check_at, $cooldown->until($company, DocumentoTipo::Cte)])->contains(fn (?CarbonImmutable $d): bool => (bool) $d?->isFuture());
-
-        if ($until && ! $cteLiberado) {
-            return back()->with('error', __('A SEFAZ só permite nova consulta deste CNPJ a partir de :hora.', ['hora' => Fmt::dateTime($until)]));
-        }
-
         if (! $company->activeCertificate || $company->activeCertificate->isExpired()) {
             return back()->with('error', __('Envie um certificado válido antes de sincronizar.'));
         }
 
-        // Cada tipo só é enfileirado se a SEFAZ já liberou a próxima consulta dele.
-        if (! $until) {
-            SyncCompanyDfe::dispatch($company);
+        $filtroTipo = $request->input('tipo');
+        $tipos = match ($filtroTipo) {
+            'nfe' => [DocumentoTipo::Nfe],
+            'cte' => [DocumentoTipo::Cte],
+            default => DocumentoTipo::cases(),
+        };
+
+        $enfileiradas = 0;
+
+        foreach ($tipos as $tipo) {
+            $state = $company->syncState($tipo);
+            $until = collect([$state->next_check_at, $cooldown->until($company, $tipo)])
+                ->filter(fn (?CarbonImmutable $d): bool => (bool) $d?->isFuture())->max();
+
+            if (! $until) {
+                SyncCompanyDfe::dispatch($company, $tipo);
+                $enfileiradas++;
+            }
         }
 
-        if ($cteLiberado) {
-            SyncCompanyDfe::dispatch($company, DocumentoTipo::Cte);
+        if ($enfileiradas === 0) {
+            $state = $company->syncState($tipos[0]);
+            $until = collect([$state->next_check_at, $cooldown->until($company, $tipos[0])])
+                ->filter(fn (?CarbonImmutable $d): bool => (bool) $d?->isFuture())->max();
+
+            return back()->with('error', __('A SEFAZ só permite nova consulta deste CNPJ a partir de :hora.', ['hora' => Fmt::dateTime($until)]));
         }
 
-        SyncProgress::queued($company->id, __('Sincronização NF-e/CT-e enfileirada…'));
+        $label = match ($filtroTipo) {
+            'nfe' => 'NF-e',
+            'cte' => 'CT-e',
+            default => 'NF-e/CT-e',
+        };
+
+        SyncProgress::queued($company->id, __("Sincronização {$label} enfileirada…"));
 
         return back()->with('success', __('Sincronização enfileirada. Os documentos aparecem em instantes.'));
     }

@@ -92,7 +92,7 @@ new #[Title('Empresa')] class extends Component {
         $this->uf = Uf::tryFrom((string) $data->uf)?->value ?? $this->uf;
 
         $data->isActive()
-            ? $this->setLookupMessage(__('Dados preenchidos automaticamente (:source). Confira antes de salvar.', ['source' => $data->source]), 'success')
+            ? $this->setLookupMessage(__('Dados preenchidos automaticamente. Confira antes de salvar.'), 'success')
             : $this->setLookupMessage(__('Atenção: situação cadastral ":s" na Receita Federal.', ['s' => $data->situacao]), 'danger');
     }
 
@@ -148,70 +148,112 @@ new #[Title('Empresa')] class extends Component {
     }
 }; ?>
 
-<section class="mx-auto w-full max-w-2xl space-y-6">
-    <flux:heading size="xl" level="1">{{ $company ? __('Editar empresa') : __('Nova empresa') }}</flux:heading>
+<section class="mx-auto w-full max-w-2xl space-y-8">
+    <div>
+        <flux:heading size="xl" level="1">{{ $company ? __('Editar empresa') : __('Nova empresa') }}</flux:heading>
+        <flux:subheading>{{ $company ? __('Altere os dados cadastrais e de sincronização.') : __('Cadastre uma empresa para começar a buscar notas fiscais.') }}</flux:subheading>
+    </div>
 
-    <form wire:submit="save" class="space-y-6">
-        <div class="grid gap-6 sm:grid-cols-2">
-            <flux:input wire:model.live.blur="cnpj" :label="__('CNPJ')" :description="__('Ao sair do campo, os dados são buscados na Receita.')" required autofocus class="font-mono">
-                <x-slot name="iconTrailing">
-                    <flux:icon.loading wire:loading wire:target="cnpj" variant="mini" />
-                </x-slot>
-            </flux:input>
+    <form wire:submit="save" class="space-y-8">
+        {{-- Identificação --}}
+        <flux:fieldset>
+            <flux:legend>{{ __('Identificação') }}</flux:legend>
 
-            <flux:select wire:model.live="uf" :label="__('UF')" :placeholder="__('Selecione')" required>
-                @foreach (Uf::cases() as $option)
-                    <flux:select.option :value="$option->value">{{ $option->value }}</flux:select.option>
-                @endforeach
-            </flux:select>
-        </div>
-
-        @if ($lookupMessage)
-            <flux:callout :variant="$lookupVariant" icon="information-circle" :heading="$lookupMessage" />
-        @endif
-
-        <flux:input wire:model="razao_social" :label="__('Razão social')" required />
-        <flux:input wire:model="nome_fantasia" :label="__('Nome fantasia')" />
-
-        {{-- Forma de busca: o ponto que mais muda o funcionamento da empresa, por isso em destaque e com as limitações à vista. --}}
-        <flux:radio.group wire:model.live="modo_busca" :label="__('Como buscar as notas desta empresa?')" variant="cards" class="flex-col">
-            @foreach (ModoBusca::cases() as $modo)
-                <flux:radio :value="$modo->value" :label="$modo->label()" :description="$modo->resumo()" />
-            @endforeach
-        </flux:radio.group>
-
-        @if ($modo_busca === ModoBusca::ContadorSc->value)
-            <flux:callout icon="information-circle" color="violet">
-                <flux:callout.heading>{{ __('Antes de usar, confira:') }}</flux:callout.heading>
-                <flux:callout.text>
-                    <ul class="list-disc space-y-1 ps-5">
-                        @foreach (ModoBusca::ContadorSc->limitacoes() as $limitacao)
-                            <li>{{ $limitacao }}</li>
-                        @endforeach
-                    </ul>
-                </flux:callout.text>
-                @unless ($this->certificadoEscritorio)
-                    <x-slot name="actions">
-                        <flux:button size="sm" :href="route('companies.index')" wire:navigate>{{ __('Enviar certificado do escritório') }}</flux:button>
+            <div class="space-y-4">
+                <flux:input
+                    wire:model.live.blur="cnpj"
+                    :label="__('CNPJ')"
+                    :description="__('Os dados da empresa são buscados automaticamente.')"
+                    required
+                    autofocus
+                    class="font-mono"
+                    placeholder="00.000.000/0000-00"
+                    :loading="false"
+                >
+                    <x-slot name="iconTrailing">
+                        <flux:icon.loading wire:loading wire:target="cnpj" variant="mini" />
                     </x-slot>
-                @endunless
-            </flux:callout>
-        @else
-            <flux:radio.group wire:model="ambiente" :label="__('Ambiente SEFAZ')">
-                @foreach (Ambiente::cases() as $option)
-                    <flux:radio :value="$option->value" :label="$option->label()" />
-                @endforeach
-            </flux:radio.group>
-        @endif
+                </flux:input>
 
-        <flux:switch wire:model="ativo" :label="__('Sincronização ativa')" />
-        @if ($modo_busca === ModoBusca::CertificadoEmpresa->value)
-            <flux:switch wire:model="manifestacao_automatica" :label="__('Enviar Ciência da Operação automaticamente')"
-                :description="__('Ao receber só o resumo da NF-e, envia o evento 210210 para liberar o XML completo.')" />
-        @endif
+                @if ($lookupMessage)
+                    <flux:callout :variant="$lookupVariant" icon="information-circle" :heading="$lookupMessage" />
+                @endif
 
-        <div class="flex gap-3">
-            <flux:button variant="primary" type="submit">{{ __('Salvar') }}</flux:button>
+                <div wire:loading.class="opacity-50 pointer-events-none" wire:target="cnpj" class="grid gap-4 sm:grid-cols-2 transition-opacity duration-200">
+                    <flux:input wire:model="razao_social" :label="__('Razão social')" required />
+                    <flux:input wire:model="nome_fantasia" :label="__('Nome fantasia')" />
+                </div>
+
+                <flux:select wire:model.live="uf" :label="__('UF')" :placeholder="__('Selecione')" required>
+                    @foreach (Uf::cases() as $option)
+                        <flux:select.option :value="$option->value">{{ $option->value }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            </div>
+        </flux:fieldset>
+
+        <flux:separator />
+
+        {{-- Busca de notas --}}
+        <flux:fieldset>
+            <flux:legend>{{ __('Busca de notas') }}</flux:legend>
+
+            <div class="space-y-4">
+                <flux:radio.group wire:model.live="modo_busca" :label="__('Como buscar as notas desta empresa?')" variant="cards" class="flex-col">
+                    @foreach (ModoBusca::cases() as $modo)
+                        <flux:radio :value="$modo->value" :label="$modo->label()" :description="$modo->resumo()" />
+                    @endforeach
+                </flux:radio.group>
+
+                @if ($modo_busca === ModoBusca::ContadorSc->value)
+                    <flux:callout icon="information-circle" color="violet">
+                        <flux:callout.heading>{{ __('Antes de usar, confira:') }}</flux:callout.heading>
+                        <flux:callout.text>
+                            <ul class="list-disc space-y-1 ps-5">
+                                @foreach (ModoBusca::ContadorSc->limitacoes() as $limitacao)
+                                    <li>{{ $limitacao }}</li>
+                                @endforeach
+                            </ul>
+                        </flux:callout.text>
+                        @unless ($this->certificadoEscritorio)
+                            <x-slot name="actions">
+                                <flux:button size="sm" :href="route('companies.index')" wire:navigate>{{ __('Enviar certificado do escritório') }}</flux:button>
+                            </x-slot>
+                        @endunless
+                    </flux:callout>
+                @else
+                    <flux:radio.group wire:model="ambiente" :label="__('Ambiente SEFAZ')">
+                        @foreach (Ambiente::cases() as $option)
+                            <flux:radio :value="$option->value" :label="$option->label()" />
+                        @endforeach
+                    </flux:radio.group>
+                @endif
+            </div>
+        </flux:fieldset>
+
+        <flux:separator />
+
+        {{-- Sincronização --}}
+        <flux:fieldset>
+            <flux:legend>{{ __('Sincronização') }}</flux:legend>
+
+            <div class="space-y-4">
+                <flux:switch wire:model="ativo" :label="__('Sincronização ativa')" :description="__('Busca novas notas periodicamente quando ativada.')" />
+
+                @if ($modo_busca === ModoBusca::CertificadoEmpresa->value)
+                    <flux:switch wire:model="manifestacao_automatica" :label="__('Enviar Ciência da Operação automaticamente')"
+                        :description="__('Ao receber só o resumo da NF-e, envia o evento 210210 para liberar o XML completo.')" />
+                @endif
+            </div>
+        </flux:fieldset>
+
+        <flux:separator />
+
+        <div class="flex items-center gap-3">
+            <flux:button variant="primary" type="submit">
+                <flux:icon.loading wire:loading wire:target="save" variant="mini" class="mr-1" />
+                {{ __('Salvar') }}
+            </flux:button>
             <flux:button :href="$company ? route('companies.show', $company) : route('companies.index')" wire:navigate>{{ __('Cancelar') }}</flux:button>
         </div>
     </form>

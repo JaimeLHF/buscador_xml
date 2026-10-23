@@ -134,10 +134,30 @@ new #[Title('Empresa')] class extends Component {
         <div class="flex flex-wrap gap-2">
             <flux:button variant="ghost" icon="clock" :href="route('sefaz-log', ['company_id' => $company->id])" wire:navigate>{{ __('Histórico de buscas') }}</flux:button>
             @php($syncing = $sync && in_array($sync['status'] ?? '', ['queued', 'running']))
-            <form method="POST" action="{{ route('companies.sync', $company) }}">
-                @csrf
-                <flux:button type="submit" icon="arrow-path" :disabled="$syncing">{{ $syncing ? __('Sincronizando…') : __('Sincronizar agora') }}</flux:button>
-            </form>
+            @if ($syncing)
+                <flux:button icon="arrow-path" disabled>{{ __('Sincronizando…') }}</flux:button>
+            @else
+                <flux:dropdown>
+                    <flux:button icon="arrow-path" icon-trailing="chevron-down">{{ __('Sincronizar agora') }}</flux:button>
+                    <flux:menu>
+                        <form method="POST" action="{{ route('companies.sync', $company) }}">
+                            @csrf
+                            <flux:menu.item type="submit" icon="arrow-path">{{ __('Tudo (NF-e + CT-e)') }}</flux:menu.item>
+                        </form>
+                        <flux:menu.separator />
+                        <form method="POST" action="{{ route('companies.sync', $company) }}">
+                            @csrf
+                            <input type="hidden" name="tipo" value="nfe">
+                            <flux:menu.item type="submit">{{ __('Somente NF-e') }}</flux:menu.item>
+                        </form>
+                        <form method="POST" action="{{ route('companies.sync', $company) }}">
+                            @csrf
+                            <input type="hidden" name="tipo" value="cte">
+                            <flux:menu.item type="submit">{{ __('Somente CT-e') }}</flux:menu.item>
+                        </form>
+                    </flux:menu>
+                </flux:dropdown>
+            @endif
 
             @can('update', $company)
                 <flux:button icon="pencil-square" :href="route('companies.edit', $company)" wire:navigate>{{ __('Editar') }}</flux:button>

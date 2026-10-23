@@ -36,11 +36,9 @@ class SyncCompanyDfe implements ShouldBeUnique, ShouldQueue
     public function handle(DistribuicaoService $service): void
     {
         try {
-            $outcome = $service->sync($this->company, $this->tipo);
+            $outcome = $service->sync($this->company, $this->tipo, untilDone: true);
 
-            if ($outcome !== SyncOutcome::MorePending) {
-                SyncProgress::done($this->company->id, $outcome);
-            }
+            SyncProgress::done($this->company->id, $outcome);
         } catch (\Throwable $e) {
             SyncProgress::done($this->company->id, SyncOutcome::Failed, $e->getMessage());
             throw $e;

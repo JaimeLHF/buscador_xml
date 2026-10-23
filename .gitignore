@@ -36,3 +36,5 @@ yarn-error.log
 /opencode.json
 /opencode.jsonc
 .playwright-mcp/
+/prints
+/buscador_xml

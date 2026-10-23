@@ -33,7 +33,7 @@ class DistribuicaoService
         private CnpjCooldown $cooldown,
     ) {}
 
-    public function sync(Company $company, DocumentoTipo $tipo = DocumentoTipo::Nfe): SyncOutcome
+    public function sync(Company $company, DocumentoTipo $tipo = DocumentoTipo::Nfe, bool $untilDone = false): SyncOutcome
     {
         // Um único processo por CNPJ/ambiente/serviço por vez (o limite da SEFAZ é por CNPJ, não por cadastro).
         $sufixo = $tipo === DocumentoTipo::Nfe ? '' : ":{$tipo->value}";
@@ -44,13 +44,13 @@ class DistribuicaoService
         }
 
         try {
-            return $this->run($company, $tipo);
+            return $this->run($company, $tipo, $untilDone);
         } finally {
             $lock->release();
         }
     }
 
-    private function run(Company $company, DocumentoTipo $tipo): SyncOutcome
+    private function run(Company $company, DocumentoTipo $tipo, bool $untilDone = false): SyncOutcome
     {
         $state = $company->syncState($tipo);
 
@@ -64,7 +64,9 @@ class DistribuicaoService
             return SyncOutcome::NotDue;
         }
 
-        for ($page = 0; $page < config('sefaz.max_pages_per_run'); $page++) {
+        $maxPages = $untilDone ? PHP_INT_MAX : config('sefaz.max_pages_per_run');
+
+        for ($page = 0; $page < $maxPages; $page++) {
             $outcome = $this->fetchPage($company, $state, $page + 1);
 
             if ($outcome !== SyncOutcome::MorePending) {
