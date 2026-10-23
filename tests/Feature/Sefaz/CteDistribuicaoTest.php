@@ -57,7 +57,7 @@ it('downloads CT-e through CTeDistribuicaoDFe and stores them as complete docume
         ->and($cte->events()->sole()->tp_evento)->toBe('110111')
         ->and(Storage::disk('local')->get($cte->xml_path))->toBe(F::file('procCTe.xml'))
         ->and($state->ult_nsu)->toBe('000000000000002')
-        ->and($state->next_check_at)->toEqual(now()->addMinutes(65))
+        ->and($state->next_check_at)->toEqual(now()->addMinutes(config('sefaz.wait_after_no_docs_minutes')))
         ->and($this->company->sefazRequests()->sole()->servico)->toBe(SefazServico::DistNsuCte);
 });
 

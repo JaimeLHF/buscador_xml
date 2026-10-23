@@ -33,7 +33,7 @@ it('waits 65 minutes after cStat 137 and persists ultNSU', function () {
     expect(state())
         ->ult_nsu->toBe('000000000000010')
         ->last_cstat->toBe('137')
-        ->next_check_at->toEqual(now()->addMinutes(65));
+        ->next_check_at->toEqual(now()->addMinutes(config('sefaz.wait_after_no_docs_minutes')));
 
     expect(fakeSefaz()->calls)->toBe([['method' => 'distNsu', 'arg' => '000000000000000']]);
 });
@@ -42,7 +42,7 @@ it('never queries again before next_check_at', function () {
     fakeSefaz()->push(F::file('ret_137.xml'));
     $this->service->sync($this->company);
 
-    $this->travel(64)->minutes();
+    $this->travel(config('sefaz.wait_after_no_docs_minutes') - 1)->minutes();
     expect($this->service->sync($this->company))->toBe(SyncOutcome::NotDue);
 
     $this->travel(2)->minutes();
@@ -69,7 +69,7 @@ it('keeps paging with the returned ultNSU while ultNSU < maxNSU on cStat 138', f
     expect(array_column(fakeSefaz()->calls, 'arg'))->toBe(['000000000000000', '000000000000002'])
         ->and(state()->ult_nsu)->toBe('000000000000003')
         ->and(state()->max_nsu)->toBe('000000000000003')
-        ->and(state()->next_check_at)->toEqual(now()->addMinutes(65))
+        ->and(state()->next_check_at)->toEqual(now()->addMinutes(config('sefaz.wait_after_no_docs_minutes')))
         ->and($this->company->sefazRequests()->count())->toBe(2);
 });
 
@@ -78,7 +78,7 @@ it('stops after the page limit and resumes on the next run', function () {
     fakeSefaz()->push(F::ret138('000000000000001', '000000000000005', [F::doc('000000000000001', 'resNFe.xml', 'resNFe_v1.01.xsd')]));
 
     expect($this->service->sync($this->company))->toBe(SyncOutcome::MorePending)
-        ->and(state()->next_check_at)->toEqual(now())
+        ->and(state()->next_check_at)->toEqual(now()->addMinutes(config('sefaz.wait_between_runs_minutes')))
         ->and(state()->ult_nsu)->toBe('000000000000001');
 });
 
@@ -88,9 +88,10 @@ it('stops and waits one hour on cStat 656, adopting the returned ultNSU', functi
     expect($this->service->sync($this->company))->toBe(SyncOutcome::Blocked);
 
     expect(state())
-        ->ult_nsu->toBe('000000000000042')
+        ->ult_nsu->toBe('000000000000000')
+        ->max_nsu->toBe('000000000000042')
         ->consecutive_656->toBe(1)
-        ->next_check_at->toEqual(now()->addMinutes(65));
+        ->next_check_at->toEqual(now()->addMinutes(config('sefaz.wait_after_656_minutes')));
 
     $this->travel(30)->minutes();
     expect($this->service->sync($this->company))->toBe(SyncOutcome::NotDue)
@@ -113,7 +114,7 @@ it('waits one hour on unexpected rejections too', function () {
 
     expect(state())
         ->last_error->toContain('593')
-        ->next_check_at->toEqual(now()->addMinutes(65));
+        ->next_check_at->toEqual(now()->addMinutes(config('sefaz.wait_after_no_docs_minutes')));
 });
 
 it('treats ambiguous failures (timeout) as possibly processed and waits the full hour', function () {
@@ -126,7 +127,7 @@ it('treats ambiguous failures (timeout) as possibly processed and waits the full
         ->last_error->toContain('timed out')
         ->last_error->not->toContain('/tmp/sped')
         ->consecutive_failures->toBe(1)
-        ->next_check_at->toEqual(now()->addMinutes(65));
+        ->next_check_at->toEqual(now()->addMinutes(config('sefaz.wait_after_no_docs_minutes')));
 
     expect($this->company->sefazRequests()->sole())
         ->servico->toBe(SefazServico::DistNsu)
@@ -152,7 +153,7 @@ it('shares the cooldown between companies with the same CNPJ', function () {
     $this->service->sync($this->company);
 
     expect($this->service->sync($twin))->toBe(SyncOutcome::NotDue)
-        ->and($twin->syncState()->refresh()->next_check_at)->toEqual(now()->addMinutes(65))
+        ->and($twin->syncState()->refresh()->next_check_at)->toEqual(now()->addMinutes(config('sefaz.wait_after_no_docs_minutes')))
         ->and(fakeSefaz()->calls)->toHaveCount(1);
 });
 
@@ -188,7 +189,7 @@ it('waits one hour on non-network errors such as schema validation', function ()
 
     $this->service->sync($this->company);
 
-    expect(state()->next_check_at)->toEqual(now()->addMinutes(65));
+    expect(state()->next_check_at)->toEqual(now()->addMinutes(config('sefaz.wait_after_no_docs_minutes')));
 });
 
 it('retries undelivered requests with exponential backoff and resets after a response', function () {

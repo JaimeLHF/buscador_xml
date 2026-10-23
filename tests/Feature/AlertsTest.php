@@ -46,7 +46,7 @@ it('alerts when consumo indevido repeats', function () {
     foreach (range(1, 3) as $_) {
         fakeSefaz()->push(F::file('ret_656.xml'));
         $service->sync($this->company);
-        $this->travel(66)->minutes();
+        $this->travel(config('sefaz.wait_after_656_minutes') + 1)->minutes();
     }
 
     Notification::assertSentToTimes($this->owner, CompanyBlocked::class, 1);
