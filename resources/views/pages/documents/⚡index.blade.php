@@ -446,24 +446,36 @@ new #[Title('Notas recebidas')] class extends Component {
 
     @php $resumo = $this->resumo; @endphp
     @if ($resumo['total'] > 0)
+        @php
+            $cardAtivo = match (true) {
+                $tipo === 'nfe' && $aba === '' => 'nfe',
+                $tipo === 'cte' && $aba === '' => 'cte',
+                $aba === 'sem_xml' => 'sem_xml',
+                $aba === 'canceladas' => 'canceladas',
+                default => '',
+            };
+            $cardBase = 'rounded-lg border-2 bg-white px-4 py-3 cursor-pointer transition-colors dark:bg-zinc-900';
+            $cardInativo = 'border-zinc-200 hover:border-blue-400 dark:border-zinc-700 dark:hover:border-blue-500';
+            $cardSelecionado = 'border-blue-500 dark:border-blue-400';
+        @endphp
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <div class="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+            <div wire:click="$set('tipo', ''); $set('aba', '')" class="{{ $cardBase }} {{ $cardAtivo === '' ? $cardSelecionado : $cardInativo }}">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Total') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['total'], 0, ',', '.') }}</p>
             </div>
-            <div class="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+            <div wire:click="$set('tipo', 'nfe'); $set('aba', '')" class="{{ $cardBase }} {{ $cardAtivo === 'nfe' ? $cardSelecionado : $cardInativo }}">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('NF-e') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['nfe'], 0, ',', '.') }}</p>
             </div>
-            <div class="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+            <div wire:click="$set('tipo', 'cte'); $set('aba', '')" class="{{ $cardBase }} {{ $cardAtivo === 'cte' ? $cardSelecionado : $cardInativo }}">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('CT-e') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['cte'], 0, ',', '.') }}</p>
             </div>
-            <div class="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+            <div wire:click="$set('tipo', ''); $set('aba', 'sem_xml')" class="{{ $cardBase }} {{ $cardAtivo === 'sem_xml' ? $cardSelecionado : $cardInativo }}">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Sem XML') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['sem_xml'], 0, ',', '.') }}</p>
             </div>
-            <div class="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900">
+            <div wire:click="$set('tipo', ''); $set('aba', 'canceladas')" class="{{ $cardBase }} {{ $cardAtivo === 'canceladas' ? $cardSelecionado : $cardInativo }}">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Canceladas') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['canceladas'], 0, ',', '.') }}</p>
             </div>
@@ -886,6 +898,7 @@ new #[Title('Notas recebidas')] class extends Component {
     </flux:modal>
 
     <style>
-        dialog[data-modal="sincronizar"]::backdrop { background-color: rgba(0, 0, 0, 0.5) !important; backdrop-filter: blur(4px) !important; -webkit-backdrop-filter: blur(4px) !important; }
+        dialog[data-modal="sincronizar"]::backdrop,
+        dialog[data-modal="filtros"]::backdrop { background-color: rgba(0, 0, 0, 0.5) !important; backdrop-filter: blur(4px) !important; -webkit-backdrop-filter: blur(4px) !important; }
     </style>
 </section>
