@@ -110,7 +110,7 @@ new #[Title('Equipe')] class extends Component {
     }
 }; ?>
 
-<section class="w-full max-w-4xl space-y-10">
+<section class="mx-auto w-full max-w-4xl space-y-10">
     <div class="space-y-1">
         <flux:heading size="xl" level="1">{{ __('Equipe') }}</flux:heading>
         <flux:text>{{ trans_choice(':n pessoa vê as notas de :org.|:n pessoas veem as notas de :org.', $this->members->count(), ['n' => $this->members->count(), 'org' => $this->organization->name]) }}</flux:text>
