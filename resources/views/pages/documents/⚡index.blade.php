@@ -45,7 +45,7 @@ new #[Title('Notas recebidas')] class extends Component {
 
     /** Campos do modal de sincronização. */
     public string $syncTipo = '';
-    public string $syncPeriodo = '3m';
+    public string $syncPeriodo = 'continuar';
 
     /** Teto por envio: cada Confirmação é um evento assinado e enviado individualmente à SEFAZ. */
     private const LOTE_MAXIMO = 500;
@@ -173,10 +173,10 @@ new #[Title('Notas recebidas')] class extends Component {
             foreach (array_filter($tiposFiltrados, $company->buscaTipo(...)) as $tipo) {
                 $state = $company->syncState($tipo);
 
-                // Se o usuário pediu um período, recua o NSU para buscar documentos mais antigos.
-                if ($mesesAtras !== null && $this->rewindNsu($state, $mesesAtras)) {
-                    // Limpa o cooldown para permitir a consulta imediata.
-                    \Illuminate\Support\Facades\Cache::forget("sefaz:cooldown:{$company->ambiente->value}:{$company->cnpj}" . ($tipo === \App\Enums\DocumentoTipo::Nfe ? '' : ":{$tipo->value}"));
+                // Se o usuário pediu um período, recua o NSU para buscar documentos mais antigos. A espera da
+                // SEFAZ continua valendo: consultar antes dela, mesmo com outro NSU, rende 656 e mais 1 hora de bloqueio.
+                if ($mesesAtras !== null) {
+                    $this->rewindNsu($company, $state, $mesesAtras);
                 }
 
                 $until = collect([$state->next_check_at, $cooldown->until($company, $tipo)])
@@ -208,28 +208,20 @@ new #[Title('Notas recebidas')] class extends Component {
     /**
      * Recua o ult_nsu para buscar documentos mais antigos.
      * A SEFAZ distribui ~3.500 NSUs/dia no ambiente nacional; usamos essa média para estimar o recuo.
+     * Só recua se o período ainda não foi baixado: repetir o recuo a cada clique baixaria os mesmos meses de novo.
      */
-    private function rewindNsu(SyncState $state, int $meses): bool
+    private function rewindNsu(\App\Models\Company $company, SyncState $state, int $meses): void
     {
         $nsusPorDia = 3500;
-        $diasAlvo = $meses * 30;
-        $recuo = $nsusPorDia * $diasAlvo;
-        $novoNsu = max(0, (int) $state->max_nsu - $recuo);
-        $novoNsuStr = str_pad((string) $novoNsu, 15, '0', STR_PAD_LEFT);
+        $novoNsu = max(0, (int) $state->max_nsu - $nsusPorDia * $meses * 30);
+        $menorNsuBaixado = $company->documents()->where('tipo', $state->tipo)->min('nsu');
 
-        // Só recua — nunca avança além do cursor atual.
-        if ($novoNsuStr < $state->ult_nsu) {
-            $state->update([
-                'ult_nsu' => $novoNsuStr,
-                'next_check_at' => now(),
-                'last_error' => null,
-                'consecutive_656' => 0,
-            ]);
+        // Tolerância de um dia: a estimativa é aproximada e o primeiro NSU baixado raramente cai no alvo exato.
+        $jaBaixado = $menorNsuBaixado !== null && (int) $menorNsuBaixado <= $novoNsu + $nsusPorDia;
 
-            return true;
+        if ($novoNsu < (int) $state->ult_nsu && ! $jaBaixado) {
+            $state->update(['ult_nsu' => str_pad((string) $novoNsu, 15, '0', STR_PAD_LEFT)]);
         }
-
-        return false;
     }
 
     /** Status agregado de sync de todas as empresas da organização. */
@@ -846,7 +838,7 @@ new #[Title('Notas recebidas')] class extends Component {
                     <div class="space-y-1.5">
                         @foreach ([
                             'continuar' => [__('Somente novos'), __('Desde a última sincronização')],
-                            '3m' => [__('Últimos 3 meses'), __('Recomendado')],
+                            '3m' => [__('Últimos 3 meses'), __('Só na primeira vez: baixa as notas anteriores')],
                             '6m' => [__('Últimos 6 meses'), __('Busca mais extensa')],
                             '1a' => [__('Último ano'), __('Sujeito a limites da SEFAZ')],
                         ] as $val => [$label, $desc])
@@ -867,7 +859,7 @@ new #[Title('Notas recebidas')] class extends Component {
                                         <p class="text-sm font-medium text-zinc-900 dark:text-white">{{ $label }}</p>
                                         <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ $desc }}</p>
                                     </div>
-                                    @if ($val === '3m')
+                                    @if ($val === 'continuar')
                                         <span class="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-500/20 dark:text-blue-300">{{ __('Padrão') }}</span>
                                     @endif
                                 </div>

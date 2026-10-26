@@ -8,6 +8,7 @@ use App\Models\Company;
 use App\Models\User;
 use App\Services\Sefaz\CnpjCooldown;
 use Illuminate\Support\Facades\Queue;
+use Livewire\Livewire;
 use Tests\Support\TestCertificate;
 
 beforeEach(function () {
@@ -58,6 +59,35 @@ it('respects the shared CNPJ cooldown', function () {
     $this->actingAs($this->user)->post(route('companies.sync', $this->company))->assertSessionHas('error');
 
     Queue::assertNothingPushed();
+});
+
+it('rewinds for a period without skipping the SEFAZ wait', function () {
+    $state = $this->company->syncState(DocumentoTipo::Nfe);
+    $state->update(['ult_nsu' => '000000000394677', 'max_nsu' => '000000000394677', 'next_check_at' => now()->addMinutes(40)]);
+    app(CnpjCooldown::class)->set($this->company, now()->addMinutes(40)->toImmutable());
+
+    Livewire::actingAs($this->user)->test('pages::documents.index')
+        ->set('syncTipo', 'nfe')
+        ->set('syncPeriodo', '3m')
+        ->call('sincronizarTodas');
+
+    Queue::assertNotPushed(SyncCompanyDfe::class);
+    expect($state->refresh()->ult_nsu)->toBe('000000000079677')
+        ->and($state->next_check_at->isFuture())->toBeTrue()
+        ->and(app(CnpjCooldown::class)->until($this->company))->not->toBeNull();
+});
+
+it('does not rewind again when the period was already downloaded', function () {
+    $state = $this->company->syncState(DocumentoTipo::Nfe);
+    $state->update(['ult_nsu' => '000000000394677', 'max_nsu' => '000000000394677']);
+    $this->company->documents()->create(['tipo' => DocumentoTipo::Nfe, 'chave' => str_repeat('1', 44), 'nsu' => '000000000079700', 'schema' => 'resNFe', 'situacao' => 'autorizada']);
+
+    Livewire::actingAs($this->user)->test('pages::documents.index')
+        ->set('syncTipo', 'nfe')
+        ->set('syncPeriodo', '3m')
+        ->call('sincronizarTodas');
+
+    expect($state->refresh()->ult_nsu)->toBe('000000000394677');
 });
 
 it('shows the SEFAZ log only for the current organization, without sensitive data', function () {

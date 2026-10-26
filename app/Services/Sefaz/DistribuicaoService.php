@@ -65,8 +65,11 @@ class DistribuicaoService
         }
 
         $maxPages = $untilDone ? PHP_INT_MAX : config('sefaz.max_pages_per_run');
+        // Para antes do timeout do job: morto no meio de uma página, o ultNSU recebido se perde e a próxima
+        // execução repete o NSU já consultado, o que a SEFAZ rejeita com 656.
+        $deadline = microtime(true) + config('sefaz.max_run_seconds');
 
-        for ($page = 0; $page < $maxPages; $page++) {
+        for ($page = 0; $page < $maxPages && microtime(true) < $deadline; $page++) {
             $outcome = $this->fetchPage($company, $state, $page + 1);
 
             if ($outcome !== SyncOutcome::MorePending) {

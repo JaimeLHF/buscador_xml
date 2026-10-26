@@ -20,6 +20,9 @@ return [
     // Páginas de distNSU por execução do job; se ainda houver documentos, aguarda o cooldown abaixo.
     'max_pages_per_run' => (int) env('SEFAZ_MAX_PAGES', 10),
 
+    // Tempo máximo de uma execução do job de distribuição; fica bem abaixo do timeout do job (600 s).
+    'max_run_seconds' => (int) env('SEFAZ_MAX_RUN_SECONDS', 420),
+
     // Minutos de espera entre rodadas quando ainda há documentos pendentes (evita 656).
     'wait_between_runs_minutes' => (int) env('SEFAZ_WAIT_BETWEEN_RUNS', 5),
 

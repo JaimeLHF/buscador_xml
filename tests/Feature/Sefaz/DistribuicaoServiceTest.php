@@ -82,6 +82,14 @@ it('stops after the page limit and resumes on the next run', function () {
         ->and(state()->ult_nsu)->toBe('000000000000001');
 });
 
+it('stops before the job timeout and resumes from the last saved ultNSU', function () {
+    config(['sefaz.max_run_seconds' => 0]);
+
+    expect($this->service->sync($this->company, untilDone: true))->toBe(SyncOutcome::MorePending)
+        ->and(fakeSefaz()->calls)->toBe([])
+        ->and(state()->next_check_at)->toEqual(now()->addMinutes(config('sefaz.wait_between_runs_minutes')));
+});
+
 it('stops and waits one hour on cStat 656, adopting the returned ultNSU', function () {
     fakeSefaz()->push(F::file('ret_656.xml'));
 
