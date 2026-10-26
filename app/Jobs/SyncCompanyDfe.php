@@ -35,6 +35,11 @@ class SyncCompanyDfe implements ShouldBeUnique, ShouldQueue
 
     public function handle(DistribuicaoService $service): void
     {
+        // A busca de CT-e pode ter sido desligada depois que o job entrou na fila.
+        if (! $this->company->buscaTipo($this->tipo)) {
+            return;
+        }
+
         try {
             $outcome = $service->sync($this->company, $this->tipo, untilDone: true);
 

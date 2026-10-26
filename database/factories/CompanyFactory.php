@@ -25,6 +25,7 @@ class CompanyFactory extends Factory
             'ambiente' => Ambiente::Homologacao,
             'ativo' => true,
             'manifestacao_automatica' => false,
+            'buscar_cte' => false,
         ];
     }
 }

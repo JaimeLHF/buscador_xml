@@ -31,7 +31,8 @@ new #[Title('Notas recebidas')] class extends Component {
     /** Aba da caixa de entrada: '' (todas), 'sem_xml' ou 'canceladas'. */
     #[Url] public string $aba = '';
     #[Url] public string $q = '';
-    #[Url] public string $tipo = '';
+    // A lista abre em NF-e, o foco do sistema; "todos" inclui os CT-e.
+    #[Url] public string $tipo = 'nfe';
     #[Url] public string $company_id = '';
     #[Url] public string $de = '';
     #[Url] public string $ate = '';
@@ -88,7 +89,7 @@ new #[Title('Notas recebidas')] class extends Component {
     #[Computed]
     public function filtrosAtivos(): int
     {
-        return count(array_filter($this->only(self::FILTROS_EXTRAS), fn ($v) => $v !== ''));
+        return count(array_filter($this->only(self::FILTROS_EXTRAS), fn ($v, $k) => $v !== '' && ! ($k === 'tipo' && $v === 'nfe'), ARRAY_FILTER_USE_BOTH));
     }
 
     /** @return array{sem_xml: int, canceladas: int} */
@@ -169,7 +170,7 @@ new #[Title('Notas recebidas')] class extends Component {
                 continue;
             }
 
-            foreach ($tiposFiltrados as $tipo) {
+            foreach (array_filter($tiposFiltrados, $company->buscaTipo(...)) as $tipo) {
                 $state = $company->syncState($tipo);
 
                 // Se o usuário pediu um período, recua o NSU para buscar documentos mais antigos.
@@ -282,7 +283,7 @@ new #[Title('Notas recebidas')] class extends Component {
     #[Computed]
     public function companies()
     {
-        return Auth::user()->currentOrganization->companies()->orderBy('razao_social')->get(['id', 'razao_social', 'cnpj']);
+        return Auth::user()->currentOrganization->companies()->orderBy('razao_social')->get(['id', 'razao_social', 'cnpj', 'buscar_cte']);
     }
 
     #[Computed]
@@ -466,7 +467,7 @@ new #[Title('Notas recebidas')] class extends Component {
             $cardSelecionado = 'border-blue-500 dark:border-blue-400';
         @endphp
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            <div wire:click="$set('tipo', ''); $set('aba', '')" class="{{ $cardBase }} {{ $cardAtivo === '' ? $cardSelecionado : $cardInativo }}">
+            <div wire:click="$set('tipo', 'todos'); $set('aba', '')" class="{{ $cardBase }} {{ $cardAtivo === '' ? $cardSelecionado : $cardInativo }}">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Total') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['total'], 0, ',', '.') }}</p>
             </div>
@@ -478,11 +479,11 @@ new #[Title('Notas recebidas')] class extends Component {
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('CT-e') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['cte'], 0, ',', '.') }}</p>
             </div>
-            <div wire:click="$set('tipo', ''); $set('aba', 'sem_xml')" class="{{ $cardBase }} {{ $cardAtivo === 'sem_xml' ? $cardSelecionado : $cardInativo }}">
+            <div wire:click="$set('tipo', 'todos'); $set('aba', 'sem_xml')" class="{{ $cardBase }} {{ $cardAtivo === 'sem_xml' ? $cardSelecionado : $cardInativo }}">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Sem XML') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['sem_xml'], 0, ',', '.') }}</p>
             </div>
-            <div wire:click="$set('tipo', ''); $set('aba', 'canceladas')" class="{{ $cardBase }} {{ $cardAtivo === 'canceladas' ? $cardSelecionado : $cardInativo }}">
+            <div wire:click="$set('tipo', 'todos'); $set('aba', 'canceladas')" class="{{ $cardBase }} {{ $cardAtivo === 'canceladas' ? $cardSelecionado : $cardInativo }}">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Canceladas') }}</p>
                 <p class="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">{{ number_format($resumo['canceladas'], 0, ',', '.') }}</p>
             </div>
@@ -598,7 +599,7 @@ new #[Title('Notas recebidas')] class extends Component {
 
     <div class="flex flex-wrap gap-3">
         <flux:radio.group wire:model.live="tipo" variant="segmented" :aria-label="__('Tipo de documento')">
-            <flux:radio value="" :label="__('Todos')" class="max-sm:px-2 max-sm:text-xs" />
+            <flux:radio value="todos" :label="__('Todos')" class="max-sm:px-2 max-sm:text-xs" />
             <flux:radio value="nfe" :label="__('NF-e')" class="max-sm:px-2 max-sm:text-xs" />
             <flux:radio value="cte" :label="__('CT-e')" class="max-sm:px-2 max-sm:text-xs" />
         </flux:radio.group>
@@ -763,7 +764,7 @@ new #[Title('Notas recebidas')] class extends Component {
             <flux:heading size="lg" level="2">{{ __('Filtros') }}</flux:heading>
 
             <flux:select wire:model.live="tipo" :label="__('Tipo de documento')">
-                <flux:select.option value="">{{ __('Todos') }}</flux:select.option>
+                <flux:select.option value="todos">{{ __('Todos') }}</flux:select.option>
                 @foreach (App\Enums\DocumentoTipo::cases() as $t)
                     <flux:select.option :value="$t->value">{{ $t->label() }}</flux:select.option>
                 @endforeach
@@ -821,8 +822,10 @@ new #[Title('Notas recebidas')] class extends Component {
                 {{-- Tipo: cards clicáveis --}}
                 <div class="space-y-2">
                     <p class="text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{{ __('Documento') }}</p>
-                    <div class="grid grid-cols-3 gap-2">
-                        @foreach (['' => 'Todos', 'nfe' => 'NF-e', 'cte' => 'CT-e'] as $val => $label)
+                    {{-- CT-e só aparece se alguma empresa tiver a busca de CT-e ligada. --}}
+                    @php $opcoesSync = $this->companies->contains('buscar_cte', true) ? ['' => 'Todos', 'nfe' => 'NF-e', 'cte' => 'CT-e'] : ['' => 'Todos', 'nfe' => 'NF-e']; @endphp
+                    <div @class(['grid gap-2', 'grid-cols-3' => count($opcoesSync) === 3, 'grid-cols-2' => count($opcoesSync) === 2])>
+                        @foreach ($opcoesSync as $val => $label)
                             <label class="group cursor-pointer">
                                 <input type="radio" wire:model.live="syncTipo" name="syncTipo" value="{{ $val }}" class="peer sr-only">
                                 <div class="rounded-xl border-2 px-3 py-2.5 text-center text-sm font-medium transition-all

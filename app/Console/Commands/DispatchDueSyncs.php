@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Enums\Ambiente;
+use App\Enums\DocumentoTipo;
 use App\Enums\ModoBusca;
 use App\Enums\Uf;
 use App\Jobs\SyncCompanyDfe;
@@ -26,6 +27,8 @@ class DispatchDueSyncs extends Command
         // Uma fila por empresa e tipo (NF-e e CT-e são serviços diferentes na SEFAZ, com limites próprios).
         SyncState::query()
             ->where(fn (Builder $q) => $q->whereNull('next_check_at')->orWhere('next_check_at', '<=', now()))
+            // CT-e só para as empresas que ligaram a busca.
+            ->where(fn (Builder $q) => $q->where('tipo', DocumentoTipo::Nfe)->orWhereHas('company', fn (Builder $q) => $q->where('buscar_cte', true)))
             ->whereHas('company', fn (Builder $q) => $q
                 ->where('ativo', true)
                 ->where('modo_busca', ModoBusca::CertificadoEmpresa)

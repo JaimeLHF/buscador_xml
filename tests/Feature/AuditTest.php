@@ -42,7 +42,7 @@ it('records exports with their filters', function () {
     expect(AuditLog::sole())
         ->acao->toBe(AuditAcao::ExportacaoPedida)
         ->descricao->toBe('Planilha (CSV)')
-        ->and(AuditLog::sole()->dados['filtros'])->toBe(['busca' => 'exemplo']);
+        ->and(AuditLog::sole()->dados['filtros'])->toBe(['tipo' => 'nfe', 'busca' => 'exemplo']);
 });
 
 it('shows the audit trail only to owners and admins, scoped to the organization', function () {

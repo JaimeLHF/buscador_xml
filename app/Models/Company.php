@@ -25,9 +25,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property Ambiente $ambiente
  * @property bool $ativo
  * @property bool $manifestacao_automatica
+ * @property bool $buscar_cte
  * @property ModoBusca $modo_busca
  */
-#[Fillable(['cnpj', 'razao_social', 'nome_fantasia', 'uf', 'ambiente', 'ativo', 'manifestacao_automatica', 'modo_busca'])]
+#[Fillable(['cnpj', 'razao_social', 'nome_fantasia', 'uf', 'ambiente', 'ativo', 'manifestacao_automatica', 'buscar_cte', 'modo_busca'])]
 class Company extends Model
 {
     /** @use HasFactory<CompanyFactory> */
@@ -55,6 +56,7 @@ class Company extends Model
             'ambiente' => Ambiente::class,
             'ativo' => 'boolean',
             'manifestacao_automatica' => 'boolean',
+            'buscar_cte' => 'boolean',
             'modo_busca' => ModoBusca::class,
         ];
     }
@@ -121,6 +123,12 @@ class Company extends Model
     public function certificadoDeBusca(): ?Certificate
     {
         return $this->buscaPeloContador() ? $this->organization->officeCertificate : $this->activeCertificate;
+    }
+
+    /** NF-e é sempre buscada; CT-e só quando a empresa liga a opção. */
+    public function buscaTipo(DocumentoTipo $tipo): bool
+    {
+        return $tipo === DocumentoTipo::Nfe || $this->buscar_cte;
     }
 
     public function syncState(DocumentoTipo $tipo = DocumentoTipo::Nfe): SyncState

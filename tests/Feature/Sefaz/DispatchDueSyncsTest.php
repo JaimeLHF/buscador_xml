@@ -2,6 +2,7 @@
 
 use App\Actions\Companies\StoreCompanyCertificate;
 use App\Enums\Ambiente;
+use App\Enums\DocumentoTipo;
 use App\Jobs\SyncCompanyDfe;
 use App\Models\Company;
 use App\Services\Sefaz\Exceptions\SefazException;
@@ -21,7 +22,7 @@ function companyWithCertificate(array $attributes = []): Company
 it('dispatches only active companies with a valid certificate whose check is due', function () {
     Queue::fake();
 
-    $due = companyWithCertificate();
+    $due = companyWithCertificate(['buscar_cte' => true]);
     $waiting = companyWithCertificate();
     $waiting->syncStates()->update(['next_check_at' => now()->addMinutes(30)]);
     $inactive = companyWithCertificate(['ativo' => false]);
@@ -33,6 +34,16 @@ it('dispatches only active companies with a valid certificate whose check is due
     // Um job por tipo de documento (NF-e e CT-e), só da empresa liberada.
     Queue::assertPushed(SyncCompanyDfe::class, 2);
     Queue::assertNotPushed(SyncCompanyDfe::class, fn (SyncCompanyDfe $job) => ! $job->company->is($due) || $job->queue !== 'sefaz');
+});
+
+it('dispatches CT-e only for companies that turned it on', function () {
+    Queue::fake();
+    $onlyNfe = companyWithCertificate();
+
+    $this->artisan('sefaz:dispatch-due')->assertSuccessful();
+
+    Queue::assertPushed(SyncCompanyDfe::class, 1);
+    Queue::assertPushed(SyncCompanyDfe::class, fn (SyncCompanyDfe $job) => $job->company->is($onlyNfe) && $job->tipo === DocumentoTipo::Nfe);
 });
 
 it('skips companies whose certificate expired', function () {

@@ -73,6 +73,7 @@ it('keeps CT-e waits and locks independent from NF-e', function () {
 
 it('dispatches one job per due company and document type', function () {
     Queue::fake();
+    $this->company->update(['buscar_cte' => true]);
     $this->travel(1)->minutes(); // o certificado de teste nasce válido a partir de "agora"
     app(StoreCompanyCertificate::class)->handle($this->company, TestCertificate::pfx(), '1234');
 
@@ -80,6 +81,12 @@ it('dispatches one job per due company and document type', function () {
 
     Queue::assertPushed(SyncCompanyDfe::class, 2);
     Queue::assertPushed(SyncCompanyDfe::class, fn ($job) => $job->tipo === DocumentoTipo::Cte && $job->uniqueId() === "{$this->company->id}:cte");
+});
+
+it('does not run a queued CT-e job after the company turned CT-e off', function () {
+    (new SyncCompanyDfe($this->company, DocumentoTipo::Cte))->handle($this->service);
+
+    expect(fakeSefaz()->calls)->toBe([]);
 });
 
 function receiveCte(Company $company): DfeDocument
@@ -138,6 +145,8 @@ it('lists CT-e in the inbox and shows the freight details', function () {
     $cte = $this->company->documents()->sole();
 
     Livewire\Livewire::actingAs($user)->test('pages::documents.index')
+        ->assertDontSee('TRANSPORTADORA EXEMPLO LTDA') // a lista abre só com NF-e
+        ->set('tipo', 'todos')
         ->assertSee('TRANSPORTADORA EXEMPLO LTDA')
         ->assertSee('CT-e')
         ->set('tipo', 'nfe')

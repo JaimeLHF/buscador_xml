@@ -36,6 +36,11 @@ class SyncNowController extends Controller
             'cte' => [DocumentoTipo::Cte],
             default => DocumentoTipo::cases(),
         };
+        $tipos = array_values(array_filter($tipos, $company->buscaTipo(...)));
+
+        if ($tipos === []) {
+            return back()->with('error', __('A busca de CT-e está desligada para esta empresa. Ligue em "Editar empresa".'));
+        }
 
         $enfileiradas = 0;
 
@@ -61,7 +66,7 @@ class SyncNowController extends Controller
         $label = match ($filtroTipo) {
             'nfe' => 'NF-e',
             'cte' => 'CT-e',
-            default => 'NF-e/CT-e',
+            default => $company->buscar_cte ? 'NF-e/CT-e' : 'NF-e',
         };
 
         SyncProgress::queued($company->id, __("Sincronização {$label} enfileirada…"));

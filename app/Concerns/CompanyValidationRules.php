@@ -39,6 +39,7 @@ trait CompanyValidationRules
             'ambiente' => ['required', Rule::enum(Ambiente::class)],
             'ativo' => ['boolean'],
             'manifestacao_automatica' => ['boolean'],
+            'buscar_cte' => ['boolean'],
             'modo_busca' => ['required', Rule::enum(ModoBusca::class)],
         ];
     }

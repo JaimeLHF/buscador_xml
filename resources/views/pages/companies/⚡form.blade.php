@@ -26,6 +26,7 @@ new #[Title('Empresa')] class extends Component {
     public int $ambiente = Ambiente::Homologacao->value;
     public bool $ativo = true;
     public bool $manifestacao_automatica = false;
+    public bool $buscar_cte = false;
     public string $modo_busca = 'certificado_empresa';
 
     public ?string $lookupMessage = null;
@@ -45,6 +46,7 @@ new #[Title('Empresa')] class extends Component {
                 'ambiente' => $company->ambiente->value,
                 'ativo' => $company->ativo,
                 'manifestacao_automatica' => $company->manifestacao_automatica,
+                'buscar_cte' => $company->buscar_cte,
                 'modo_busca' => $company->modo_busca->value,
             ]);
 
@@ -243,6 +245,9 @@ new #[Title('Empresa')] class extends Component {
                 @if ($modo_busca === ModoBusca::CertificadoEmpresa->value)
                     <flux:switch wire:model="manifestacao_automatica" :label="__('Enviar Ciência da Operação automaticamente')"
                         :description="__('Ao receber só o resumo da NF-e, envia o evento 210210 para liberar o XML completo.')" />
+
+                    <flux:switch wire:model="buscar_cte" :label="__('Buscar CT-e (conhecimentos de transporte)')"
+                        :description="__('Além das NF-e, busca os CT-e em que a empresa aparece. Costuma trazer muito volume de frete.')" />
                 @endif
             </div>
         </flux:fieldset>

@@ -33,12 +33,22 @@ it('respects next_check_at and tells when it can run', function () {
 });
 
 it('queues only the document types whose wait is over', function () {
+    $this->company->update(['buscar_cte' => true]);
     $this->company->syncState()->update(['next_check_at' => now()->addMinutes(40)]);
 
     $this->actingAs($this->user)->post(route('companies.sync', $this->company))->assertSessionHas('success');
 
     Queue::assertPushed(SyncCompanyDfe::class, 1);
     Queue::assertPushed(SyncCompanyDfe::class, fn ($job) => $job->tipo === DocumentoTipo::Cte);
+});
+
+it('does not queue CT-e for a company with CT-e turned off', function () {
+    $this->actingAs($this->user)->post(route('companies.sync', $this->company))->assertSessionHas('success');
+
+    Queue::assertPushed(SyncCompanyDfe::class, 1);
+    Queue::assertPushed(SyncCompanyDfe::class, fn ($job) => $job->tipo === DocumentoTipo::Nfe);
+
+    $this->actingAs($this->user)->post(route('companies.sync', $this->company), ['tipo' => 'cte'])->assertSessionHas('error');
 });
 
 it('respects the shared CNPJ cooldown', function () {
