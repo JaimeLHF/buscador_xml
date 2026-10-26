@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Route;
 // Ferramenta interna: a raiz leva à caixa de notas (ou ao login, via middleware auth).
 Route::redirect('/', '/documents')->name('home');
 
+// Link de convite compartilhável: aberto a visitantes, que criam a conta ali mesmo.
+Route::livewire('join/{token}', 'pages::organizations.join')->middleware('throttle:20,1')->name('join');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('organizations/create', 'pages::organizations.create')->name('organizations.create');
     Route::get('invitations/{token}', AcceptInvitationController::class)->middleware('throttle:10,1')->name('invitations.accept');

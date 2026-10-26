@@ -83,6 +83,20 @@ new #[Title('Membros')] class extends Component {
         Flux::toast(text: __('Membro removido.'));
     }
 
+    public function regenerateJoinLink(): void
+    {
+        abort_unless($this->canManage, 403);
+        $this->organization->regenerateJoinLink();
+        Flux::toast(variant: 'success', text: __('Novo link gerado. O anterior deixou de funcionar.'));
+    }
+
+    public function disableJoinLink(): void
+    {
+        abort_unless($this->canManage, 403);
+        $this->organization->disableJoinLink();
+        Flux::toast(text: __('Link de convite desativado.'));
+    }
+
     public function revoke(int $invitationId): void
     {
         abort_unless($this->canManage, 403);
@@ -136,7 +150,24 @@ new #[Title('Membros')] class extends Component {
 
     @if ($this->canManage)
         <flux:card class="space-y-4">
-            <flux:heading size="lg" level="2">{{ __('Convidar') }}</flux:heading>
+            <div>
+                <flux:heading size="lg" level="2">{{ __('Link de convite') }}</flux:heading>
+                <flux:subheading>{{ __('Quem abrir o link cria a conta e entra como membro. Envie só para pessoas da empresa.') }}</flux:subheading>
+            </div>
+
+            @if ($joinUrl = $this->organization->joinUrl())
+                <flux:input :value="$joinUrl" readonly copyable />
+                <div class="flex gap-2">
+                    <flux:button size="sm" wire:click="regenerateJoinLink" wire:confirm="{{ __('O link atual vai parar de funcionar. Continuar?') }}">{{ __('Gerar novo link') }}</flux:button>
+                    <flux:button size="sm" variant="ghost" wire:click="disableJoinLink">{{ __('Desativar') }}</flux:button>
+                </div>
+            @else
+                <flux:button variant="primary" icon="link" wire:click="regenerateJoinLink">{{ __('Gerar link de convite') }}</flux:button>
+            @endif
+        </flux:card>
+
+        <flux:card class="space-y-4">
+            <flux:heading size="lg" level="2">{{ __('Convidar por e-mail') }}</flux:heading>
 
             <form wire:submit="invite" class="flex flex-wrap items-end gap-4">
                 <flux:input wire:model="email" type="email" :label="__('E-mail')" required class="min-w-64 flex-1" />

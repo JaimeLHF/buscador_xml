@@ -105,3 +105,66 @@ it('does not change the role of an existing member who accepts an old invitation
 
     expect($member->roleIn($this->organization))->toBe(OrganizationRole::Member);
 });
+
+it('lets a visitor create an account through the join link and become a member', function () {
+    Livewire::actingAs($this->owner)->test('pages::organizations.members')->call('regenerateJoinLink');
+    $url = $this->organization->fresh()->joinUrl();
+    $token = basename($url);
+
+    auth()->logout();
+    $this->get($url)->assertOk()->assertSee($this->organization->name);
+
+    Livewire::test('pages::organizations.join', ['token' => $token])
+        ->set('name', 'Colega')
+        ->set('email', 'colega@example.com')
+        ->set('password', 'password')
+        ->set('password_confirmation', 'password')
+        ->call('register')
+        ->assertHasNoErrors()
+        ->assertRedirect(route('documents.index'));
+
+    $colega = User::where('email', 'colega@example.com')->sole();
+    expect($colega->roleIn($this->organization))->toBe(OrganizationRole::Member)
+        ->and($colega->current_organization_id)->toBe($this->organization->id)
+        ->and($colega->organizations()->count())->toBe(1);
+    $this->assertAuthenticatedAs($colega);
+});
+
+it('lets a logged-in user join through the link without changing an existing role', function () {
+    $this->organization->regenerateJoinLink();
+    $token = basename($this->organization->joinUrl());
+
+    $other = User::factory()->withOrganization()->create();
+    Livewire::actingAs($other)->test('pages::organizations.join', ['token' => $token])->call('join');
+    expect($other->roleIn($this->organization))->toBe(OrganizationRole::Member)
+        ->and($other->fresh()->current_organization_id)->toBe($this->organization->id);
+
+    Livewire::actingAs($this->owner)->test('pages::organizations.join', ['token' => $token]);
+    expect($this->owner->roleIn($this->organization))->toBe(OrganizationRole::Owner);
+});
+
+it('stops accepting a join link after it is regenerated or disabled', function () {
+    $this->organization->regenerateJoinLink();
+    $old = basename($this->organization->joinUrl());
+    $this->organization->regenerateJoinLink();
+
+    Livewire::test('pages::organizations.join', ['token' => $old])->assertSee('Convite inválido');
+
+    $current = basename($this->organization->joinUrl());
+    $this->organization->disableJoinLink();
+    Livewire::test('pages::organizations.join', ['token' => $current])
+        ->set('name', 'X')->set('email', 'x@example.com')->set('password', 'password')->set('password_confirmation', 'password')
+        ->call('register')
+        ->assertNotFound();
+    expect(User::where('email', 'x@example.com')->exists())->toBeFalse();
+});
+
+it('forbids members from managing the join link', function () {
+    $member = User::factory()->create();
+    $this->organization->addMember($member, OrganizationRole::Member);
+    $member->switchOrganization($this->organization);
+
+    Livewire::actingAs($member)->test('pages::organizations.members')
+        ->call('regenerateJoinLink')
+        ->assertForbidden();
+});

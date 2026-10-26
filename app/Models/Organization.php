@@ -13,17 +13,20 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
  * @property string $name
+ * @property string|null $join_token
+ * @property string|null $join_token_hash
  * @property string|null $webhook_url
  * @property string|null $webhook_secret
  * @property string|null $webhook_ultimo_status
  * @property CarbonImmutable|null $webhook_ultimo_envio_at
  */
-#[Fillable(['name', 'webhook_url', 'webhook_secret', 'webhook_ultimo_status', 'webhook_ultimo_envio_at'])]
-#[Hidden(['webhook_secret'])]
+#[Fillable(['name', 'join_token', 'join_token_hash', 'webhook_url', 'webhook_secret', 'webhook_ultimo_status', 'webhook_ultimo_envio_at'])]
+#[Hidden(['webhook_secret', 'join_token', 'join_token_hash'])]
 class Organization extends Model
 {
     /** @use HasFactory<OrganizationFactory> */
@@ -33,6 +36,7 @@ class Organization extends Model
     {
         return [
             'webhook_secret' => 'encrypted',
+            'join_token' => 'encrypted',
             'webhook_ultimo_envio_at' => 'datetime',
         ];
     }
@@ -100,5 +104,27 @@ class Organization extends Model
     public function addMember(User $user, OrganizationRole $role): void
     {
         $this->users()->syncWithoutDetaching([$user->id => ['role' => $role]]);
+    }
+
+    /** Gera um novo link de convite; o anterior deixa de funcionar. */
+    public function regenerateJoinLink(): void
+    {
+        $token = Str::random(40);
+        $this->update(['join_token' => $token, 'join_token_hash' => hash('sha256', $token)]);
+    }
+
+    public function disableJoinLink(): void
+    {
+        $this->update(['join_token' => null, 'join_token_hash' => null]);
+    }
+
+    public function joinUrl(): ?string
+    {
+        return $this->join_token === null ? null : route('join', $this->join_token);
+    }
+
+    public static function findByJoinToken(string $token): ?self
+    {
+        return self::query()->where('join_token_hash', hash('sha256', $token))->first();
     }
 }
