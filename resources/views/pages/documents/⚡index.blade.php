@@ -139,6 +139,7 @@ new #[Title('Notas recebidas')] class extends Component {
         $cooldown = app(\App\Services\Sefaz\CnpjCooldown::class);
         $companies = Auth::user()->currentOrganization->companies()->where('ativo', true)->get();
         $enfileiradas = 0;
+        $proximaLiberacao = null;
         $tiposFiltrados = match ($this->syncTipo) {
             'nfe' => [\App\Enums\DocumentoTipo::Nfe],
             'cte' => [\App\Enums\DocumentoTipo::Cte],
@@ -184,6 +185,8 @@ new #[Title('Notas recebidas')] class extends Component {
                     SyncProgress::queued($company->id, __('Sincronização enfileirada…'));
                     \App\Jobs\SyncCompanyDfe::dispatch($company, $tipo);
                     $enfileiradas++;
+                } elseif (! $proximaLiberacao || $until->lessThan($proximaLiberacao)) {
+                    $proximaLiberacao = $until;
                 }
             }
         }
@@ -192,9 +195,13 @@ new #[Title('Notas recebidas')] class extends Component {
 
         Flux::modal('sincronizar')->close();
 
-        $enfileiradas > 0
-            ? Flux::toast(variant: 'success', text: __(':n sincronizações enfileiradas.', ['n' => $enfileiradas]))
-            : Flux::toast(variant: 'warning', text: __('Nenhuma empresa pôde ser sincronizada agora. Verifique os certificados ou aguarde o intervalo da SEFAZ.'));
+        if ($enfileiradas > 0) {
+            Flux::toast(variant: 'success', text: __(':n sincronizações enfileiradas.', ['n' => $enfileiradas]));
+        } elseif ($proximaLiberacao) {
+            Flux::toast(variant: 'warning', text: __('Aguardando o intervalo da SEFAZ. Próxima consulta liberada às :hora — a sincronização continua automaticamente.', ['hora' => $proximaLiberacao->timezone('America/Sao_Paulo')->format('H:i')]));
+        } else {
+            Flux::toast(variant: 'warning', text: __('Nenhuma empresa pôde ser sincronizada. Verifique se os certificados estão ativos e dentro da validade.'));
+        }
     }
 
     /**
