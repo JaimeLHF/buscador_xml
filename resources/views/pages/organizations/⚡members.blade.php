@@ -11,7 +11,7 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Membros')] class extends Component {
+new #[Title('Equipe')] class extends Component {
     public string $email = '';
     public string $role = 'member';
 
@@ -110,83 +110,121 @@ new #[Title('Membros')] class extends Component {
     }
 }; ?>
 
-<section class="w-full max-w-4xl space-y-8">
-    <flux:heading size="xl" level="1">{{ __('Membros de :org', ['org' => $this->organization->name]) }}</flux:heading>
+<section class="w-full max-w-4xl space-y-10">
+    <div class="space-y-1">
+        <flux:heading size="xl" level="1">{{ __('Equipe') }}</flux:heading>
+        <flux:text>{{ trans_choice(':n pessoa vê as notas de :org.|:n pessoas veem as notas de :org.', $this->members->count(), ['n' => $this->members->count(), 'org' => $this->organization->name]) }}</flux:text>
+    </div>
 
-    <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
-    <flux:table>
-        <flux:table.columns>
-            <flux:table.column>{{ __('Nome') }}</flux:table.column>
-            <flux:table.column>{{ __('E-mail') }}</flux:table.column>
-            <flux:table.column>{{ __('Papel') }}</flux:table.column>
-            <flux:table.column></flux:table.column>
-        </flux:table.columns>
-        <flux:table.rows>
-            @foreach ($this->members as $member)
-                <flux:table.row :key="$member->id">
-                    <flux:table.cell>{{ $member->name }}</flux:table.cell>
-                    <flux:table.cell>{{ $member->email }}</flux:table.cell>
-                    <flux:table.cell>
-                        @if ($this->canManage && $member->pivot->role !== OrganizationRole::Owner)
-                            <flux:select size="sm" wire:change="changeRole({{ $member->id }}, $event.target.value)" class="max-w-40">
-                                @foreach ([OrganizationRole::Admin, OrganizationRole::Member] as $r)
-                                    <flux:select.option :value="$r->value" :selected="$member->pivot->role === $r">{{ $r->label() }}</flux:select.option>
-                                @endforeach
-                            </flux:select>
-                        @else
-                            {{ $member->pivot->role->label() }}
+    <div class="divide-y divide-zinc-200 border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-900">
+        @foreach ($this->members as $member)
+            @php($isOwner = $member->pivot->role === OrganizationRole::Owner)
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" wire:key="member-{{ $member->id }}">
+                <flux:avatar circle size="sm" :name="$member->name" />
+
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <span class="truncate text-sm font-medium text-zinc-900 dark:text-white">{{ $member->name }}</span>
+                        @if ($member->id === auth()->id())
+                            <flux:badge size="sm" color="zinc">{{ __('Você') }}</flux:badge>
                         @endif
-                    </flux:table.cell>
-                    <flux:table.cell align="end">
-                        @if ($this->canManage && $member->pivot->role !== OrganizationRole::Owner && $member->id !== auth()->id())
-                            <flux:button size="sm" variant="ghost" icon="trash" wire:click="remove({{ $member->id }})" wire:confirm="{{ __('Remover :name da organização?', ['name' => $member->name]) }}" />
-                        @endif
-                    </flux:table.cell>
-                </flux:table.row>
+                    </div>
+                    <div class="truncate text-sm text-zinc-500 dark:text-zinc-400">{{ $member->email }}</div>
+                </div>
+
+                <div class="hidden text-xs tabular-nums text-zinc-500 sm:block dark:text-zinc-400">
+                    {{ __('desde :d', ['d' => Fmt::date($member->pivot->created_at)]) }}
+                </div>
+
+                <div class="flex w-full items-center gap-1 ps-12 sm:w-48 sm:shrink-0 sm:justify-end sm:ps-0">
+                    @if ($this->canManage && ! $isOwner)
+                        <flux:select size="sm" wire:change="changeRole({{ $member->id }}, $event.target.value)" :aria-label="__('Papel de :name', ['name' => $member->name])">
+                            @foreach ([OrganizationRole::Admin, OrganizationRole::Member] as $r)
+                                <flux:select.option :value="$r->value" :selected="$member->pivot->role === $r">{{ $r->label() }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                    @else
+                        <span class="text-sm text-zinc-600 dark:text-zinc-300">{{ $member->pivot->role->label() }}</span>
+                    @endif
+
+                    @if ($this->canManage && ! $isOwner && $member->id !== auth()->id())
+                        <flux:tooltip :content="__('Remover da equipe')">
+                            <flux:button size="sm" variant="ghost" icon="user-minus" wire:click="remove({{ $member->id }})" wire:confirm="{{ __('Remover :name da organização?', ['name' => $member->name]) }}" :aria-label="__('Remover :name', ['name' => $member->name])" />
+                        </flux:tooltip>
+                    @endif
+                </div>
+            </div>
+        @endforeach
+
+        @if ($this->canManage)
+            @foreach ($this->invitations as $inv)
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3" wire:key="inv-{{ $inv->id }}">
+                    <flux:avatar circle size="sm" icon="envelope" />
+
+                    <div class="min-w-0 flex-1">
+                        <div class="truncate text-sm text-zinc-700 dark:text-zinc-300">{{ $inv->email }}</div>
+                        <div class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Convite pendente · :role', ['role' => $inv->role->label()]) }}</div>
+                    </div>
+
+                    <div class="hidden text-xs tabular-nums text-zinc-500 sm:block dark:text-zinc-400">
+                        {{ __('expira em :d', ['d' => Fmt::date($inv->expires_at)]) }}
+                    </div>
+
+                    <div class="flex w-full ps-12 sm:w-48 sm:shrink-0 sm:justify-end sm:ps-0">
+                        <flux:button size="sm" variant="ghost" wire:click="revoke({{ $inv->id }})">{{ __('Cancelar convite') }}</flux:button>
+                    </div>
+                </div>
             @endforeach
-        </flux:table.rows>
-    </flux:table>
+        @endif
     </div>
 
     @if ($this->canManage)
-        <flux:card class="space-y-4">
-            <div>
-                <flux:heading size="lg" level="2">{{ __('Link de convite') }}</flux:heading>
-                <flux:subheading>{{ __('Quem abrir o link cria a conta e entra como membro. Envie só para pessoas da empresa.') }}</flux:subheading>
-            </div>
+        <div class="space-y-4">
+            <flux:heading size="lg" level="2">{{ __('Adicionar pessoas') }}</flux:heading>
 
-            @if ($joinUrl = $this->organization->joinUrl())
-                <flux:input :value="$joinUrl" readonly copyable />
-                <div class="flex gap-2">
-                    <flux:button size="sm" wire:click="regenerateJoinLink" wire:confirm="{{ __('O link atual vai parar de funcionar. Continuar?') }}">{{ __('Gerar novo link') }}</flux:button>
-                    <flux:button size="sm" variant="ghost" wire:click="disableJoinLink">{{ __('Desativar') }}</flux:button>
-                </div>
-            @else
-                <flux:button variant="primary" icon="link" wire:click="regenerateJoinLink">{{ __('Gerar link de convite') }}</flux:button>
-            @endif
-        </flux:card>
-
-        <flux:card class="space-y-4">
-            <flux:heading size="lg" level="2">{{ __('Convidar por e-mail') }}</flux:heading>
-
-            <form wire:submit="invite" class="flex flex-wrap items-end gap-4">
-                <flux:input wire:model="email" type="email" :label="__('E-mail')" required class="min-w-64 flex-1" />
-                <flux:select wire:model="role" :label="__('Papel')" class="max-w-48">
-                    <flux:select.option value="member">{{ OrganizationRole::Member->label() }}</flux:select.option>
-                    <flux:select.option value="admin">{{ OrganizationRole::Admin->label() }}</flux:select.option>
-                </flux:select>
-                <flux:button type="submit" variant="primary">{{ __('Enviar convite') }}</flux:button>
-            </form>
-
-            @if ($this->invitations->isNotEmpty())
-                <flux:separator />
-                @foreach ($this->invitations as $inv)
-                    <div class="flex items-center justify-between text-sm" wire:key="inv-{{ $inv->id }}">
-                        <span>{{ $inv->email }} · {{ $inv->role->label() }} · {{ __('expira em :d', ['d' => Fmt::date($inv->expires_at)]) }}</span>
-                        <flux:button size="sm" variant="ghost" wire:click="revoke({{ $inv->id }})">{{ __('Cancelar') }}</flux:button>
+            <div class="grid border border-zinc-200 bg-white md:grid-cols-2 dark:border-zinc-700 dark:bg-zinc-900">
+                <div class="flex flex-col gap-4 p-5">
+                    <div class="flex items-start gap-3">
+                        <flux:icon.link class="mt-0.5 size-5 shrink-0 text-zinc-400" />
+                        <div>
+                            <flux:heading>{{ __('Link de convite') }}</flux:heading>
+                            <flux:text size="sm">{{ __('Quem abrir o link cria a conta e entra como membro. Envie só para pessoas da empresa.') }}</flux:text>
+                        </div>
                     </div>
-                @endforeach
-            @endif
-        </flux:card>
+
+                    @if ($joinUrl = $this->organization->joinUrl())
+                        <flux:input :value="$joinUrl" readonly copyable :aria-label="__('Link de convite')" />
+                        <div class="mt-auto flex gap-2">
+                            <flux:button size="sm" icon="arrow-path" wire:click="regenerateJoinLink" wire:confirm="{{ __('O link atual vai parar de funcionar. Continuar?') }}">{{ __('Gerar novo') }}</flux:button>
+                            <flux:button size="sm" variant="ghost" wire:click="disableJoinLink">{{ __('Desativar') }}</flux:button>
+                        </div>
+                    @else
+                        <div class="mt-auto">
+                            <flux:button variant="primary" icon="link" wire:click="regenerateJoinLink">{{ __('Gerar link de convite') }}</flux:button>
+                        </div>
+                    @endif
+                </div>
+
+                <form wire:submit="invite" class="flex flex-col gap-4 border-t border-zinc-200 p-5 md:border-t-0 md:border-l dark:border-zinc-700">
+                    <div class="flex items-start gap-3">
+                        <flux:icon.envelope class="mt-0.5 size-5 shrink-0 text-zinc-400" />
+                        <div>
+                            <flux:heading>{{ __('Convidar por e-mail') }}</flux:heading>
+                            <flux:text size="sm">{{ __('A pessoa recebe um link pessoal, válido por 7 dias.') }}</flux:text>
+                        </div>
+                    </div>
+
+                    <flux:input wire:model="email" type="email" :placeholder="__('nome@empresa.com.br')" required :aria-label="__('E-mail')" />
+
+                    <div class="mt-auto flex gap-2">
+                        <flux:select wire:model="role" size="sm" class="max-w-40" :aria-label="__('Papel')">
+                            <flux:select.option value="member">{{ OrganizationRole::Member->label() }}</flux:select.option>
+                            <flux:select.option value="admin">{{ OrganizationRole::Admin->label() }}</flux:select.option>
+                        </flux:select>
+                        <flux:button size="sm" type="submit" variant="primary" icon="paper-airplane">{{ __('Enviar convite') }}</flux:button>
+                    </div>
+                </form>
+            </div>
+        </div>
     @endif
 </section>
