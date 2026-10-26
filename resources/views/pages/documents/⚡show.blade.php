@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\TipoEvento;
+use App\Jobs\FetchFullDocument;
 use App\Models\DfeDocument;
 use App\Services\Documents\NfeReader;
 use App\Services\Sefaz\XmlStorage;
@@ -103,8 +104,17 @@ new #[Title('Nota fiscal')] class extends Component {
         $this->document->refresh();
         unset($this->eventos, $this->manifestacoes, $this->auditoria);
 
+        // Com a Ciência ou a Confirmação a SEFAZ libera o XML completo: busca pela chave em vez de esperar a próxima distribuição.
+        $liberaXml = in_array($tipo, [TipoEvento::CienciaOperacao, TipoEvento::ConfirmacaoOperacao], true) && ! $this->document->tem_xml_completo;
+
+        if ($liberaXml) {
+            FetchFullDocument::dispatch($this->document)->delay(now()->addMinutes(2));
+        }
+
         Flux::modal('manifestar')->close();
-        Flux::toast(variant: 'success', text: __(':evento registrada.', ['evento' => $tipo->label()]));
+        Flux::toast(variant: 'success', text: $liberaXml
+            ? __(':evento registrada. O XML completo chega em poucos minutos.', ['evento' => $tipo->label()])
+            : __(':evento registrada.', ['evento' => $tipo->label()]));
     }
 }; ?>
 

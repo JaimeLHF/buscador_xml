@@ -193,6 +193,19 @@ it('lets admins manifest from the document page with confirmation', function () 
     expect($document->refresh()->manifestacao_status)->toBe(ManifestacaoStatus::NaoRealizada);
 });
 
+it('fetches the full XML by key after a manual Ciência on the document page', function () {
+    Queue::fake();
+    $document = receiveResumo($this->company);
+    fakeSefaz()->push(F::retEvento('135', 'Evento registrado e vinculado a NF-e', CH, '210210'));
+
+    Livewire::actingAs($this->user)->test('pages::documents.show', ['document' => $document])
+        ->call('confirmar', '210210')
+        ->call('manifestar')
+        ->assertHasNoErrors();
+
+    Queue::assertPushed(FetchFullDocument::class, fn (FetchFullDocument $job) => $job->document->is($document));
+});
+
 it('hides manifestation actions from members and other organizations', function () {
     Queue::fake();
     $document = receiveResumo($this->company);
