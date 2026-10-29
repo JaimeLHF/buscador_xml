@@ -384,7 +384,7 @@ new #[Title('Chaves do SPED')] class extends Component {
     $mesLabel = fn (?string $data) => $data ? ucfirst(Carbon\CarbonImmutable::parse($data)->locale('pt_BR')->translatedFormat('M/Y')) : null;
     $filtrosAtivos = $q !== '' || $mes !== '' || $natureza !== '' || $status !== '' || $fornecedor !== '';
 @endphp
-<section class="w-full space-y-6" @if ($naFila > 0) wire:poll.5s @endif x-data="{ enviar: {{ $total === 0 ? 'true' : 'false' }}, arrastando: false, progresso: 0 }">
+<section class="w-full space-y-6 [&_button:not(:disabled)]:cursor-pointer" @if ($naFila > 0) wire:poll.5s @endif x-data="{ enviar: {{ $total === 0 ? 'true' : 'false' }}, arrastando: false, progresso: 0 }">
     {{-- Cabeçalho --}}
     <header class="flex flex-wrap items-end justify-between gap-4">
         <div class="min-w-0">
@@ -553,6 +553,7 @@ new #[Title('Chaves do SPED')] class extends Component {
         </div>
 
         @if ($visao === 'fornecedores')
+            <div wire:key="visao-fornecedores" class="surgir space-y-6">
             {{-- Um fornecedor por linha; abrir mostra as notas dele para marcar. --}}
             <div class="divide-y divide-zinc-200 border border-zinc-200 bg-white dark:divide-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="status,mes,q,natureza,limparFiltros,gotoPage,nextPage,previousPage">
                 @forelse ($this->fornecedoresAgrupados as $f)
@@ -563,9 +564,9 @@ new #[Title('Chaves do SPED')] class extends Component {
                         $tudoMarcado = $aConsultar > 0 && $marcadasAqui >= $aConsultar;
                     @endphp
                     <section wire:key="forn-{{ $f->cnpj }}" @class(['bg-zinc-50/60 dark:bg-white/[0.02]' => $aberto])>
-                        <div class="flex items-center gap-3 px-4 py-3">
+                        <div class="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-zinc-50 dark:hover:bg-white/[0.03]">
                             <button type="button" wire:click="alternarFornecedor('{{ $f->cnpj }}')" aria-expanded="{{ $aberto ? 'true' : 'false' }}" aria-controls="notas-{{ $f->cnpj }}"
-                                class="group/forn flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-2 focus-visible:outline-offset-4">
+                                class="group/forn -my-3 flex min-w-0 flex-1 items-center gap-3 py-3 text-start focus-visible:outline-2 focus-visible:outline-offset-4">
                                 <flux:icon.chevron-right variant="mini" @class(['shrink-0 text-zinc-400 transition-transform duration-200 group-hover/forn:text-zinc-900 dark:group-hover/forn:text-white', 'rotate-90' => $aberto]) />
                                 <span class="min-w-0">
                                     <span class="block truncate font-medium text-zinc-900 dark:text-white">{{ $f->nome ?? Fmt::cnpj($f->cnpj) }}</span>
@@ -605,7 +606,7 @@ new #[Title('Chaves do SPED')] class extends Component {
                         </div>
 
                         @if ($aberto)
-                            <div id="notas-{{ $f->cnpj }}" class="border-t border-zinc-200 dark:border-zinc-700">
+                            <div id="notas-{{ $f->cnpj }}" class="surgir border-t border-zinc-200 dark:border-zinc-700">
                                 <ul role="list" class="divide-y divide-zinc-100 dark:divide-zinc-800">
                                     @foreach ($this->notasDosAbertos[$f->cnpj] ?? [] as $c)
                                         @php
@@ -661,7 +662,9 @@ new #[Title('Chaves do SPED')] class extends Component {
             </div>
 
             <flux:pagination :paginator="$this->fornecedoresAgrupados" />
+            </div>
         @else
+            <div wire:key="visao-notas" class="surgir space-y-6">
         @if ($this->fornecedorFiltrado)
             <div class="flex flex-wrap items-center gap-2 text-sm">
                 <span class="text-zinc-500 dark:text-zinc-400">{{ __('Fornecedor') }}</span>
@@ -820,6 +823,7 @@ new #[Title('Chaves do SPED')] class extends Component {
         </div>
 
         <flux:pagination :paginator="$this->chaves" />
+            </div>
         @endif
 
         {{-- Barra de ação: aparece presa ao pé da tela assim que há chaves marcadas. --}}

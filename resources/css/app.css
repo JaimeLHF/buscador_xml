@@ -107,3 +107,21 @@ select:focus[data-flux-control] {
 [x-cloak] {
     display: none !important;
 }
+
+/* Entrada curta para conteúdo que acaba de aparecer (troca de aba, fornecedor aberto). */
+@keyframes surgir {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+}
+
+.surgir {
+    animation: surgir 260ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .surgir {
+        animation: none;
+    }
+}
