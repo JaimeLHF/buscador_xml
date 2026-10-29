@@ -30,6 +30,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('companies/create', 'pages::companies.form')->name('companies.create');
         Route::livewire('companies/{company}', 'pages::companies.show')->name('companies.show');
         Route::livewire('companies/{company}/edit', 'pages::companies.form')->name('companies.edit');
+        Route::livewire('companies/{company}/sped', 'pages::companies.sped')->name('companies.sped');
         Route::post('companies/{company}/certificates', [CompanyCertificateController::class, 'store'])
             ->middleware('throttle:10,1')
             ->name('companies.certificates.store');

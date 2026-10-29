@@ -3,14 +3,11 @@
 use App\Enums\ChaveHistoricaStatus;
 use App\Enums\ConferenciaSped;
 use App\Models\Company;
-use App\Models\User;
 use App\Services\MeuDanfe\BuscaHistoricaService;
 use App\Services\MeuDanfe\SpedChaves;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Sleep;
-use Livewire\Livewire;
 use Tests\Support\SefazFixtures as F;
 
 const CHAVE_HIST = '42261011222333000181550010000001231123456788';
@@ -22,6 +19,13 @@ beforeEach(function () {
     config(['services.meudanfe.key' => 'teste']);
     $this->company = Company::factory()->create(['cnpj' => '12345678000195']);
 });
+
+/** Importa e marca tudo para a consulta, como quem seleciona as chaves na tela. */
+function naFila(Company $company, string $sped): void
+{
+    SpedChaves::importar($company, $sped);
+    $company->chavesHistoricas()->update(['status' => ChaveHistoricaStatus::Pendente]);
+}
 
 function sped(): string
 {
@@ -38,8 +42,10 @@ function sped(): string
 it('queues only third-party NF-e entries from the SPED, once', function () {
     expect(SpedChaves::extrair(sped()))->toBe([CHAVE_HIST]);
 
-    expect(SpedChaves::importar($this->company, sped()))->toBe(['lidas' => 1, 'novas' => 1])
-        ->and(SpedChaves::importar($this->company, sped()))->toBe(['lidas' => 1, 'novas' => 0]);
+    expect(SpedChaves::importar($this->company, sped()))->toBe(['lidas' => 1, 'novas' => 1, 'com_xml' => 0])
+        ->and(SpedChaves::importar($this->company, sped()))->toBe(['lidas' => 1, 'novas' => 0, 'com_xml' => 0])
+        // Consultar é pago: nada vai para a fila sem alguém marcar.
+        ->and($this->company->chavesHistoricas()->sole()->status)->toBe(ChaveHistoricaStatus::Importada);
 });
 
 it('skips keys that already have the full XML', function () {
@@ -49,7 +55,7 @@ it('skips keys that already have the full XML', function () {
 });
 
 it('polls Meu Danfe until OK and stores the full document', function () {
-    SpedChaves::importar($this->company, sped());
+    naFila($this->company, sped());
 
     Http::fake([
         MEUDANFE.'fd/add/*' => Http::sequence()->push(['status' => 'SEARCHING'])->push(['status' => 'OK']),
@@ -66,7 +72,7 @@ it('polls Meu Danfe until OK and stores the full document', function () {
 });
 
 it('rejects an XML without authorization protocol', function () {
-    SpedChaves::importar($this->company, sped());
+    naFila($this->company, sped());
 
     Http::fake([
         MEUDANFE.'fd/add/*' => Http::response(['status' => 'OK']),
@@ -82,7 +88,7 @@ it('rejects an XML without authorization protocol', function () {
 });
 
 it('marks not found keys as final', function () {
-    SpedChaves::importar($this->company, sped());
+    naFila($this->company, sped());
     Http::fake([MEUDANFE.'fd/add/*' => Http::response(['status' => 'NOT_FOUND'])]);
 
     app(BuscaHistoricaService::class)->buscar(10);
@@ -91,7 +97,7 @@ it('marks not found keys as final', function () {
 });
 
 it('stops and keeps keys pending when the account has no balance', function () {
-    SpedChaves::importar($this->company, sped());
+    naFila($this->company, sped());
     Http::fake([MEUDANFE.'fd/add/*' => Http::response(['status' => 402], 402)]);
 
     $r = app(BuscaHistoricaService::class)->buscar(10);
@@ -100,19 +106,6 @@ it('stops and keeps keys pending when the account has no balance', function () {
     expect($r['sem_saldo'])->toBeTrue()
         ->and($item->status)->toBe(ChaveHistoricaStatus::Pendente)
         ->and($item->tentativas)->toBe(0);
-});
-
-it('imports SPED files from the company page', function () {
-    $user = User::factory()->withOrganization()->create();
-    $company = Company::factory()->for($user->currentOrganization)->create();
-
-    Livewire::actingAs($user)->test('pages::companies.show', ['company' => $company])
-        ->set('speds', [UploadedFile::fake()->createWithContent('sped.txt', sped())])
-        ->call('importarSped')
-        ->assertHasNoErrors()
-        ->assertSee('1 notas de entrada encontradas no SPED, 1 novas na fila.');
-
-    expect($company->chavesHistoricas()->count())->toBe(1);
 });
 
 /** C100 da chave da fixture procNFe.xml (vNF 1500.75, emitida em 20/10/2026). */
@@ -144,7 +137,7 @@ it('keeps the SPED value and date, and fills them on a key queued before', funct
 });
 
 it('marks the rebuilt XML as matching the SPED when value and date agree', function () {
-    SpedChaves::importar($this->company, spedDaFixture());
+    naFila($this->company, spedDaFixture());
     meuDanfeEntrega();
 
     app(BuscaHistoricaService::class)->buscar(10);
@@ -155,7 +148,7 @@ it('marks the rebuilt XML as matching the SPED when value and date agree', funct
 });
 
 it('flags a divergence and says what differs', function (string $data, string $valor, string $trecho) {
-    SpedChaves::importar($this->company, spedDaFixture($data, $valor));
+    naFila($this->company, spedDaFixture($data, $valor));
     meuDanfeEntrega();
 
     app(BuscaHistoricaService::class)->buscar(10);

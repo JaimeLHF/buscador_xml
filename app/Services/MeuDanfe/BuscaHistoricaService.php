@@ -7,6 +7,7 @@ use App\Enums\DfeSchema;
 use App\Models\ChaveHistorica;
 use App\Services\Sefaz\DocumentProcessor;
 use App\Services\Sefaz\DocZip;
+use Carbon\CarbonImmutable;
 use DOMDocument;
 use DOMElement;
 use Illuminate\Support\Facades\DB;
@@ -23,18 +24,30 @@ class BuscaHistoricaService
 
     public function __construct(private MeuDanfeClient $client, private DocumentProcessor $processor, private ConferenciaSpedService $conferencia) {}
 
-    /** @return array{encontradas: int, nao_encontradas: int, erros: int, sem_saldo: bool} */
-    public function buscar(int $limite): array
+    /**
+     * Lê a fila uma chave por vez, para pegar também as marcadas durante a busca. Com prazo, para antes dele
+     * (o job tem tempo máximo) e as restantes ficam para a próxima rodada.
+     *
+     * @return array{encontradas: int, nao_encontradas: int, erros: int, sem_saldo: bool}
+     */
+    public function buscar(int $limite, ?CarbonImmutable $prazo = null): array
     {
         $resultado = ['encontradas' => 0, 'nao_encontradas' => 0, 'erros' => 0, 'sem_saldo' => false];
+        $ultimoId = 0;
 
-        $pendentes = ChaveHistorica::with('company.organization')
-            ->where('status', ChaveHistoricaStatus::Pendente)
-            ->orderBy('id')
-            ->limit($limite)
-            ->get();
+        for ($i = 0; $i < $limite && ($prazo === null || now()->lessThan($prazo)); $i++) {
+            $item = ChaveHistorica::with('company.organization')
+                ->where('status', ChaveHistoricaStatus::Pendente)
+                ->where('id', '>', $ultimoId)
+                ->orderBy('id')
+                ->first();
 
-        foreach ($pendentes as $item) {
+            if ($item === null) {
+                break;
+            }
+
+            $ultimoId = $item->id;
+
             try {
                 $status = $this->aguardar($item->chave);
             } catch (SemSaldoException) {

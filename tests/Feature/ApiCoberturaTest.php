@@ -52,14 +52,14 @@ it('reports SPED keys, incoming notes, checks and notes outside the SPED per mon
         ->and($r['data'])->toBe([
             [
                 'mes' => '2026-09',
-                'chaves_sped' => ['total' => 2, 'pendente' => 0, 'encontrada' => 1, 'nao_encontrada' => 0, 'erro' => 1, 'mes_pela_chave' => 0],
+                'chaves_sped' => ['total' => 2, 'importada' => 0, 'pendente' => 0, 'encontrada' => 1, 'nao_encontrada' => 0, 'erro' => 1, 'mes_pela_chave' => 0],
                 'notas_entrada' => ['total' => 1, 'sefaz' => 0, 'reconstruidas' => 1],
                 'conferencia' => ['confere' => 1, 'diverge' => 0, 'sem_conferencia' => 0],
                 'fora_do_sped' => 0,
             ],
             [
                 'mes' => '2026-10',
-                'chaves_sped' => ['total' => 4, 'pendente' => 1, 'encontrada' => 2, 'nao_encontrada' => 1, 'erro' => 0, 'mes_pela_chave' => 1],
+                'chaves_sped' => ['total' => 4, 'importada' => 1, 'pendente' => 0, 'encontrada' => 2, 'nao_encontrada' => 1, 'erro' => 0, 'mes_pela_chave' => 1],
                 'notas_entrada' => ['total' => 3, 'sefaz' => 2, 'reconstruidas' => 1],
                 'conferencia' => ['confere' => 0, 'diverge' => 1, 'sem_conferencia' => 0],
                 'fora_do_sped' => 1,
@@ -69,7 +69,7 @@ it('reports SPED keys, incoming notes, checks and notes outside the SPED per mon
     // Cada chave em exatamente um status: os baldes fecham com o total, mês a mês e no SPED inteiro.
     foreach ($r['data'] as $mes) {
         $c = $mes['chaves_sped'];
-        expect($c['pendente'] + $c['encontrada'] + $c['nao_encontrada'] + $c['erro'])->toBe($c['total'])
+        expect($c['importada'] + $c['pendente'] + $c['encontrada'] + $c['nao_encontrada'] + $c['erro'])->toBe($c['total'])
             ->and($mes['notas_entrada']['sefaz'] + $mes['notas_entrada']['reconstruidas'])->toBe($mes['notas_entrada']['total'])
             ->and(array_sum($mes['conferencia']))->toBe($mes['notas_entrada']['reconstruidas']);
     }
