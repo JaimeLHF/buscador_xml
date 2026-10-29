@@ -44,6 +44,7 @@ it('lists only the token organization documents, with a cursor and change filter
     receive($this->company);
     $foreign = Company::factory()->create(['cnpj' => '12345678000195']);
     receive($foreign);
+    $this->travel(3)->minutes();
 
     $response = $this->withToken($this->plain)->getJson('/api/v1/documents?por_pagina=10')->assertOk();
 

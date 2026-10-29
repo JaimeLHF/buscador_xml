@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Company;
+use App\Models\DfeDocument;
 use App\Services\Sefaz\SefazGateway;
 use App\Services\SefSc\SefScGateway;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -29,4 +31,22 @@ function fakeSefaz(): FakeSefazGateway
 function fakeSefSc(): FakeSefScGateway
 {
     return app(SefScGateway::class);
+}
+
+const CNPJ_FORNECEDOR = '11222333000181';
+const CNPJ_OUTRA = '11444777000161';
+
+/** NF-e gravada direto no banco, para os testes da API. */
+function notaApi(Company $company, string $chave, array $attrs = []): DfeDocument
+{
+    return $company->documents()->create([
+        'tipo' => 'nfe', 'chave' => $chave, 'nsu' => '1', 'schema' => 'procNFe', 'situacao' => 'autorizada',
+        'tem_xml_completo' => true, 'emitente_cnpj' => CNPJ_FORNECEDOR, 'data_emissao' => '2026-10-20 13:15:00',
+        ...$attrs,
+    ]);
+}
+
+function chaveApi(int $n, string $aamm = '2610'): string
+{
+    return '42'.$aamm.CNPJ_FORNECEDOR.'55001'.str_pad((string) $n, 9, '0', STR_PAD_LEFT).'1123456780';
 }

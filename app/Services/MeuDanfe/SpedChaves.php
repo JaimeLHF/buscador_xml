@@ -6,7 +6,7 @@ use App\Enums\ChaveHistoricaStatus;
 use App\Models\Company;
 use Carbon\CarbonImmutable;
 
-/** Lê o SPED EFD ICMS/IPI e põe na fila as NF-e de entrada emitidas por terceiros que ainda não têm XML completo. */
+/** Lê o SPED EFD ICMS/IPI, registra as NF-e de entrada emitidas por terceiros e põe na fila as que ainda não têm XML completo. */
 class SpedChaves
 {
     /** @return list<string> chaves dos registros C100 de entrada (IND_OPER=0), de terceiros (IND_EMIT=1), modelo 55 */
@@ -67,11 +67,19 @@ class SpedChaves
             ], $lote), ['company_id', 'chave'], ['sped_valor', 'sped_data', 'updated_at']);
         }
 
-        // Nota que já veio do Meu Danfe não volta para a fila, mas ganha valor e data para o historico:conferir.
+        // Chave que já tem XML completo não entra na fila, mas fica registrada como encontrada: a cobertura precisa
+        // de todas as chaves do SPED. Se já estava registrada, ganha valor e data para o historico:conferir.
         foreach (array_chunk($jaTem, 500) as $lote) {
-            foreach ($company->chavesHistoricas()->whereIn('chave', $lote)->get() as $item) {
-                $item->update(['sped_valor' => $registros[$item->chave]['valor'], 'sped_data' => $registros[$item->chave]['data']]);
-            }
+            $company->chavesHistoricas()->upsert(array_map(fn (string $chave) => [
+                'company_id' => $company->id,
+                'chave' => $chave,
+                'status' => ChaveHistoricaStatus::Encontrada->value,
+                'tentativas' => 0,
+                'sped_valor' => $registros[$chave]['valor'],
+                'sped_data' => $registros[$chave]['data'],
+                'created_at' => $agora,
+                'updated_at' => $agora,
+            ], $lote), ['company_id', 'chave'], ['sped_valor', 'sped_data', 'updated_at']);
         }
 
         return ['lidas' => count($chaves), 'novas' => $novas];

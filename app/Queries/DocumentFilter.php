@@ -15,7 +15,7 @@ use Illuminate\Database\Eloquent\Builder;
 /**
  * Filtros da lista de documentos, reaproveitados na exportação ZIP. Sempre restrito a uma organização.
  *
- * @phpstan-type Filters array{company_id?: int|string|null, de?: string|null, ate?: string|null, emitente?: string|null, valor_min?: string|float|null, valor_max?: string|float|null, situacao?: string|null, xml?: string|null, manifestacao?: string|null, chave?: string|null, busca?: string|null, tipo?: string|null}
+ * @phpstan-type Filters array{company_id?: int|string|null, de?: string|null, ate?: string|null, emitente?: string|null, valor_min?: string|float|null, valor_max?: string|float|null, situacao?: string|null, xml?: string|null, manifestacao?: string|null, chave?: string|null, busca?: string|null, tipo?: string|null, direcao?: string|null, empresa_cnpj?: string|null}
  */
 final class DocumentFilter
 {
@@ -30,6 +30,11 @@ final class DocumentFilter
         return DfeDocument::query()
             ->whereIn('company_id', $organization->companies()->select('id'))
             ->when($f['company_id'] ?? null, fn (Builder $q, $id) => $q->where('company_id', (int) $id))
+            // Procurado só entre as empresas da organização: CNPJ de outra organização dá lista vazia.
+            ->when($f['empresa_cnpj'] ?? null, fn (Builder $q, string $cnpj) => $q->whereIn('company_id', $organization->companies()->where('cnpj', Cnpj::normalize($cnpj))->select('id')))
+            // Saída é a nota emitida pela própria empresa (a mesma regra de DfeDocument::emitidaPelaEmpresa()).
+            ->when(($f['direcao'] ?? null) === 'saida', fn (Builder $q) => $q->whereHas('company', fn (Builder $c) => $c->whereColumn('companies.cnpj', 'dfe_documents.emitente_cnpj')))
+            ->when(($f['direcao'] ?? null) === 'entrada', fn (Builder $q) => $q->whereDoesntHave('company', fn (Builder $c) => $c->whereColumn('companies.cnpj', 'dfe_documents.emitente_cnpj')))
             ->when(DocumentoTipo::tryFrom((string) ($f['tipo'] ?? '')), fn (Builder $q, DocumentoTipo $t) => $q->where('tipo', $t))
             ->when($f['de'] ?? null, fn (Builder $q, $d) => $q->where('data_emissao', '>=', CarbonImmutable::parse($d, Fmt::TIMEZONE)->startOfDay()->utc()))
             ->when($f['ate'] ?? null, fn (Builder $q, $d) => $q->where('data_emissao', '<=', CarbonImmutable::parse($d, Fmt::TIMEZONE)->endOfDay()->utc()))
