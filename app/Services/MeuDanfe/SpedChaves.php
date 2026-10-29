@@ -162,8 +162,13 @@ class SpedChaves
     {
         $selecionaveis = array_values(array_map(fn (ChaveHistoricaStatus $s) => $s->value, array_filter(ChaveHistoricaStatus::cases(), fn (ChaveHistoricaStatus $s) => $s->selecionavel())));
 
-        $n = $company->chavesHistoricas()->whereKey($ids)->whereIn('status', $selecionaveis)->consultaveis()
-            ->update(['status' => ChaveHistoricaStatus::Pendente->value, 'tentativas' => 0, 'ultimo_erro' => null, 'updated_at' => now()]);
+        $n = 0;
+
+        // Em lotes: "selecionar todas" pode trazer milhares de ids, e o Postgres limita os parâmetros de uma consulta.
+        foreach (array_chunk($ids, 1000) as $lote) {
+            $n += $company->chavesHistoricas()->whereKey($lote)->whereIn('status', $selecionaveis)->consultaveis()
+                ->update(['status' => ChaveHistoricaStatus::Pendente->value, 'tentativas' => 0, 'ultimo_erro' => null, 'updated_at' => now()]);
+        }
 
         if ($n > 0) {
             BuscarChavesHistoricas::dispatch();

@@ -23,9 +23,6 @@ new #[Title('Chaves do SPED')] class extends Component {
     use WithFileUploads;
     use WithPagination;
 
-    /** Teto de uma consulta completa em lote (cada chave é cobrada). */
-    public const LOTE_MAXIMO = 1000;
-
     public Company $company;
 
     /** @var list<Illuminate\Http\UploadedFile> */
@@ -42,6 +39,12 @@ new #[Title('Chaves do SPED')] class extends Component {
     /** @var list<int|string> */
     public array $selecionados = [];
 
+    /**
+     * "Selecionar todas" marca o filtro inteiro sem trazer os ids para o navegador (podem ser milhares):
+     * a consulta refaz a busca no servidor.
+     */
+    public bool $todas = false;
+
     public function mount(Company $company): void
     {
         Gate::authorize('update', $company);
@@ -53,6 +56,8 @@ new #[Title('Chaves do SPED')] class extends Component {
     {
         if (in_array($property, ['status', 'mes', 'q', 'natureza'], true)) {
             $this->resetPage();
+            // Mudou o filtro: "todas" já não significa as mesmas chaves.
+            $this->todas = false;
         }
     }
 
@@ -158,13 +163,20 @@ new #[Title('Chaves do SPED')] class extends Component {
 
     public function marcarFiltradas(): void
     {
-        $this->selecionados = $this->filtradas()->whereIn('status', self::statusSelecionaveis())->consultaveis()
-            ->orderByRaw('sped_data desc nulls last')->orderBy('id')->limit(self::LOTE_MAXIMO)->pluck('id')->all();
+        $this->todas = true;
+        $this->selecionados = [];
     }
 
     public function desmarcar(): void
     {
+        $this->todas = false;
         $this->selecionados = [];
+    }
+
+    #[Computed]
+    public function marcadas(): int
+    {
+        return $this->todas ? $this->selecionaveisFiltradas : count($this->selecionados);
     }
 
     public function consultar(): void
@@ -178,15 +190,17 @@ new #[Title('Chaves do SPED')] class extends Component {
         }
 
         // Revalida no servidor: a seleção vem do navegador e só conta o que é desta empresa e ainda pode ser consultado.
-        $ids = array_slice(array_values(array_unique(array_map('intval', $this->selecionados))), 0, self::LOTE_MAXIMO);
+        $ids = $this->todas
+            ? $this->filtradas()->whereIn('status', self::statusSelecionaveis())->consultaveis()->pluck('id')->all()
+            : array_values(array_unique(array_map('intval', $this->selecionados)));
         $n = SpedChaves::enfileirar($this->company, $ids);
 
         if ($n > 0) {
             Audit::record(AuditAcao::ConsultaNfeCompleta, $this->company->organization_id, descricao: $this->company->razao_social, dados: ['chaves' => $n]);
         }
 
-        $this->selecionados = [];
-        unset($this->chaves, $this->contagem, $this->selecionaveisFiltradas);
+        $this->desmarcar();
+        unset($this->chaves, $this->contagem, $this->selecionaveisFiltradas, $this->marcadas);
         Flux::modal('consultar-nfe')->close();
 
         $n === 0
@@ -288,15 +302,15 @@ new #[Title('Chaves do SPED')] class extends Component {
 
         <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="status,mes,q,natureza,gotoPage,nextPage,previousPage,importar">
             {{-- Barra de seleção: fica presa no topo enquanto há chaves marcadas. --}}
-            @if ($this->selecionaveisFiltradas > 0 || $selecionados)
+            @if ($this->selecionaveisFiltradas > 0 || $this->marcadas)
                 <div @class([
                     'sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2',
-                    'border-zinc-800 bg-zinc-900 text-white dark:border-white/20 dark:bg-zinc-100 dark:text-zinc-900' => $selecionados,
-                    'border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/60' => ! $selecionados,
+                    'border-zinc-800 bg-zinc-900 text-white dark:border-white/20 dark:bg-zinc-100 dark:text-zinc-900' => $this->marcadas,
+                    'border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/60' => ! $this->marcadas,
                 ])>
-                    @if ($selecionados)
+                    @if ($this->marcadas)
                         <p class="text-sm">
-                            <span class="font-semibold tabular-nums">{{ trans_choice(':count chave marcada|:count chaves marcadas', count($selecionados), ['count' => number_format(count($selecionados), 0, ',', '.')]) }}</span>
+                            <span class="font-semibold tabular-nums">{{ trans_choice(':count chave marcada|:count chaves marcadas', $this->marcadas, ['count' => number_format($this->marcadas, 0, ',', '.')]) }}</span>
                         </p>
                         <div class="flex flex-wrap items-center gap-2">
                             <button type="button" wire:click="desmarcar" class="rounded px-2.5 py-1 text-sm opacity-80 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2">{{ __('Desmarcar') }}</button>
@@ -307,7 +321,7 @@ new #[Title('Chaves do SPED')] class extends Component {
                             </flux:modal.trigger>
                         </div>
                     @else
-                        <flux:button size="sm" variant="primary" icon="check" wire:click="marcarFiltradas">{{ __('Selecionar todas (:n)', ['n' => number_format(min($this->selecionaveisFiltradas, $this::LOTE_MAXIMO), 0, ',', '.')]) }}</flux:button>
+                        <flux:button size="sm" variant="primary" icon="check" wire:click="marcarFiltradas">{{ __('Selecionar todas (:n)', ['n' => number_format($this->selecionaveisFiltradas, 0, ',', '.')]) }}</flux:button>
                         <flux:text size="sm">{{ __('ou clique nas linhas para escolher uma a uma') }}</flux:text>
                     @endif
                 </div>
@@ -345,6 +359,7 @@ new #[Title('Chaves do SPED')] class extends Component {
                                 $serie = ltrim(substr($c->chave, 22, 3), '0') ?: '0';
                                 $nome = $c->fornecedor_nome ?? $this->fornecedores[$cnpj] ?? null;
                                 $marcavel = $c->consultavel();
+                                $clicavel = $marcavel && ! $todas;
                                 $semNota = $c->semNotaNoSped() && $c->status !== ChaveHistoricaStatus::Encontrada;
                                 [$ponto, $cor] = $semNota ? ['bg-zinc-400', 'text-zinc-500 dark:text-zinc-400'] : $tom($c->status);
                                 $situacao = $semNota ? __('Cancelada no SPED') : $c->status->label();
@@ -354,12 +369,14 @@ new #[Title('Chaves do SPED')] class extends Component {
                                 $notaId = $this->notas[$c->chave] ?? null;
                             @endphp
                             <li wire:key="chave-{{ $c->id }}">
-                                <{{ $marcavel ? 'label' : 'div' }} @class([
-                                    $grade, 'py-2.5 pe-4 transition-colors',
-                                    'cursor-pointer hover:bg-zinc-50 dark:hover:bg-white/[0.03] has-[:checked]:bg-zinc-100 dark:has-[:checked]:bg-white/[0.07]' => $marcavel,
+                                <{{ $clicavel ? 'label' : 'div' }} @class([
+                                    $grade, 'py-2.5 pe-4 transition-colors has-[:checked]:bg-zinc-100 dark:has-[:checked]:bg-white/[0.07]',
+                                    'cursor-pointer hover:bg-zinc-50 dark:hover:bg-white/[0.03]' => $clicavel,
                                 ])>
                                     <span class="flex justify-center">
-                                        @if ($marcavel)
+                                        @if ($marcavel && $todas)
+                                            <input type="checkbox" checked disabled aria-label="{{ __('Marcada (todas selecionadas)') }}" class="size-4 accent-zinc-800 dark:accent-white">
+                                        @elseif ($marcavel)
                                             <input type="checkbox" wire:model.live="selecionados" value="{{ $c->id }}" aria-label="{{ __('Marcar a nota :n de :f', ['n' => $numero, 'f' => $nome ?? Fmt::cnpj($cnpj)]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
                                         @endif
                                     </span>
@@ -409,7 +426,7 @@ new #[Title('Chaves do SPED')] class extends Component {
                                             <p class="mt-0.5 truncate ps-4 text-xs text-zinc-500 dark:text-zinc-400" title="{{ $c->ultimo_erro }}">{{ $c->ultimo_erro }}</p>
                                         @endif
                                     </div>
-                                </{{ $marcavel ? 'label' : 'div' }}>
+                                </{{ $clicavel ? 'label' : 'div' }}>
                             </li>
                         @endforeach
                     </ul>
@@ -428,7 +445,7 @@ new #[Title('Chaves do SPED')] class extends Component {
     <flux:modal name="consultar-nfe" class="md:w-[32rem]">
         <form wire:submit="consultar" class="space-y-6">
             <div>
-                <flux:heading size="lg" level="2">{{ trans_choice('Consulta completa de :count NF-e|Consulta completa de :count NF-e', count($selecionados), ['count' => count($selecionados)]) }}</flux:heading>
+                <flux:heading size="lg" level="2">{{ __('Consulta completa de :count NF-e', ['count' => number_format($this->marcadas, 0, ',', '.')]) }}</flux:heading>
                 <flux:text class="mt-2">{{ __('A busca começa agora, uma chave por vez; a situação na lista atualiza sozinha.') }}</flux:text>
             </div>
 

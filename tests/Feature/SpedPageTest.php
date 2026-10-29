@@ -104,7 +104,7 @@ it('marks every selectable key of the current filter', function () {
         ->set('mes', '2026-10')
         ->call('marcarFiltradas');
 
-    expect($page->get('selecionados'))->toHaveCount(2);
+    $page->assertSet('todas', true)->assertSee('2 chaves marcadas');
 });
 
 it('keeps members without management rights out', function () {
@@ -177,11 +177,33 @@ it('reads supplier, purchase nature, SPED status and taxes, and never offers a n
         ->and($industria->sped_impostos)->toBe(['icms' => '120.00', 'ipi' => '50.00'])
         ->and($cancelada->natureza)->toBe(NaturezaCompra::Combustivel);
 
-    $page->call('marcarFiltradas')->assertSet('selecionados', [$industria->id])
+    $page->call('marcarFiltradas')->assertSet('todas', true)->assertSee('1 chave marcada')
         ->set('natureza', 'combustivel')->assertSee('POSTO CENTRAL LTDA')->assertDontSee('SÃO JOÃO');
 
     // Mesmo forçando a seleção pelo navegador, a cancelada no SPED não vai para a consulta.
     $page->set('selecionados', [$cancelada->id])->call('consultar');
     expect($cancelada->refresh()->status)->toBe(ChaveHistoricaStatus::Importada);
     Queue::assertNothingPushed();
+});
+
+it('selects every key of the filter, beyond one page and without a cap, and queues them all', function () {
+    Queue::fake();
+    $this->company->chavesHistoricas()->createMany(collect(range(1, 1203))->map(fn ($n) => ['chave' => chaveApi($n), 'status' => 'importada', 'sped_data' => '2026-10-10'])->all());
+    $this->company->chavesHistoricas()->create(['chave' => chaveApi(9999), 'status' => 'importada', 'sped_situacao' => '02']);
+
+    Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
+        ->call('marcarFiltradas')
+        ->assertSee('1.203 chaves marcadas')
+        ->call('consultar');
+
+    expect($this->company->chavesHistoricas()->where('status', 'pendente')->count())->toBe(1203);
+    Queue::assertPushed(BuscarChavesHistoricas::class, 1);
+});
+
+it('drops the select-all mode when the filter changes', function () {
+    $this->company->chavesHistoricas()->create(['chave' => chaveApi(1), 'status' => 'importada']);
+
+    Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
+        ->call('marcarFiltradas')->assertSet('todas', true)
+        ->set('mes', '2026-01')->assertSet('todas', false);
 });
