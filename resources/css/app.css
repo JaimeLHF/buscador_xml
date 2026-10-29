@@ -103,3 +103,7 @@ select:focus[data-flux-control] {
 .rounded-\[\.3rem\] {
     border-radius: 2px;
 }
+
+[x-cloak] {
+    display: none !important;
+}

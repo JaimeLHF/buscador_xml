@@ -35,13 +35,12 @@ function arquivoSped(): UploadedFile
     ]));
 }
 
-it('reads the uploaded SPED and lists the keys awaiting selection, without fetching anything', function () {
+it('reads the SPED as soon as it is dropped and lists the keys awaiting selection, without fetching anything', function () {
     Queue::fake();
     notaApi($this->company, chaveApi(125), ['emitente_nome' => 'FORNECEDOR CONHECIDO LTDA']);
 
     Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
         ->set('speds', [arquivoSped()])
-        ->call('importar')
         ->assertHasNoErrors()
         ->assertSet('status', 'importada')
         ->assertSee('3 notas de entrada no SPED')
@@ -56,7 +55,7 @@ it('reads the uploaded SPED and lists the keys awaiting selection, without fetch
 
 it('fetches only the marked keys from Meu Danfe and audits the paid request', function () {
     Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
-        ->set('speds', [arquivoSped()])->call('importar');
+        ->set('speds', [arquivoSped()]);
 
     Http::fake([
         'https://api.meudanfe.com.br/v2/fd/add/*' => Http::response(['status' => 'OK']),
@@ -162,7 +161,6 @@ it('reads supplier, purchase nature, SPED status and taxes, and never offers a n
 
     $page = Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
         ->set('speds', [UploadedFile::fake()->createWithContent('sped.txt', $sped)])
-        ->call('importar')
         ->assertSee('INDÚSTRIA DE MÓVEIS SÃO JOÃO LTDA')
         ->assertSee('SC')
         ->assertSee('Industrialização')
