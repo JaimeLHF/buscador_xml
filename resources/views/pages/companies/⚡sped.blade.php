@@ -53,6 +53,9 @@ new #[Title('Chaves do SPED')] class extends Component {
      */
     public bool $todas = false;
 
+    /** Quantas estavam na fila na última atualização automática. */
+    public int $naFilaVista = 0;
+
     public function mount(Company $company): void
     {
         Gate::authorize('update', $company);
@@ -68,6 +71,22 @@ new #[Title('Chaves do SPED')] class extends Component {
             // Mudou o filtro: "todas" já não significa as mesmas chaves.
             $this->todas = false;
         }
+    }
+
+    /**
+     * Chamado a cada 5 segundos pela tela. O wire:poll fica sempre ligado porque, se só aparecesse depois de
+     * clicar em Consultar, o Livewire não o ativaria sem recarregar a página. Sem nada na fila, não redesenha nada.
+     */
+    public function atualizar(): void
+    {
+        $agora = $this->company->chavesHistoricas()->where('status', ChaveHistoricaStatus::Pendente)->count();
+
+        // Redesenha também na rodada em que a fila zera, para a última nota aparecer como recebida.
+        if ($agora === 0 && $this->naFilaVista === 0) {
+            $this->skipRender();
+        }
+
+        $this->naFilaVista = $agora;
     }
 
     /** Soltou os arquivos na área de envio: lê na hora, sem um segundo clique. */
@@ -344,6 +363,7 @@ new #[Title('Chaves do SPED')] class extends Component {
             ? $this->filtradas()->whereIn('status', self::statusSelecionaveis())->consultaveis()->pluck('id')->all()
             : array_values(array_unique(array_map('intval', $this->selecionados)));
         $n = SpedChaves::enfileirar($this->company, $ids);
+        $this->naFilaVista += $n;
 
         if ($n > 0) {
             Audit::record(AuditAcao::ConsultaNfeCompleta, $this->company->organization_id, descricao: $this->company->razao_social, dados: ['chaves' => $n]);
@@ -384,7 +404,7 @@ new #[Title('Chaves do SPED')] class extends Component {
     $mesLabel = fn (?string $data) => $data ? ucfirst(Carbon\CarbonImmutable::parse($data)->locale('pt_BR')->translatedFormat('M/Y')) : null;
     $filtrosAtivos = $q !== '' || $mes !== '' || $natureza !== '' || $status !== '' || $fornecedor !== '';
 @endphp
-<section class="w-full space-y-6 [&_button:not(:disabled)]:cursor-pointer" @if ($naFila > 0) wire:poll.5s @endif x-data="{ enviar: {{ $total === 0 ? 'true' : 'false' }}, arrastando: false, progresso: 0 }">
+<section class="w-full space-y-6 [&_button:not(:disabled)]:cursor-pointer" wire:poll.5s.visible="atualizar" x-data="{ enviar: {{ $total === 0 ? 'true' : 'false' }}, arrastando: false, progresso: 0 }">
     {{-- Cabeçalho --}}
     <header class="flex flex-wrap items-end justify-between gap-4">
         <div class="min-w-0">

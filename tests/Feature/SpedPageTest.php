@@ -256,3 +256,14 @@ it('groups the keys by supplier, opens one and marks only its notes to look up',
     $page->set('selecionados', [$a->id, $b->id, $outra->id])->call('marcarFornecedor', $eucatex);
     expect(array_map('intval', $page->get('selecionados')))->toBe([$outra->id]);
 });
+
+it('keeps polling for the queue and only redraws while there are keys being looked up', function () {
+    $page = Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company]);
+    $page->assertSeeHtml('wire:poll.5s.visible="atualizar"');
+
+    $chave = $this->company->chavesHistoricas()->create(['chave' => chaveApi(1), 'status' => 'pendente']);
+    $page->call('atualizar')->assertSee('Consultando 1 nota');
+
+    $chave->update(['status' => 'encontrada']);
+    $page->call('atualizar')->assertSee('1 de 1 notas com XML completo');
+});
