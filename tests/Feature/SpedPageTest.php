@@ -205,3 +205,25 @@ it('drops the select-all mode when the filter changes', function () {
         ->call('marcarFiltradas')->assertSet('todas', true)
         ->set('mes', '2026-01')->assertSet('todas', false);
 });
+
+it('finds a supplier by name and selects only its notes', function () {
+    Queue::fake();
+    $eucatex = '56643018000166';
+    $daEucatex = fn ($n) => '4225'.'10'.$eucatex.'55001'.str_pad((string) $n, 9, '0', STR_PAD_LEFT).'1123456780';
+    $this->company->chavesHistoricas()->create(['chave' => $daEucatex(1), 'status' => 'importada', 'fornecedor_nome' => 'EUCATEX S/A INDUSTRIA E COMERCIO']);
+    $this->company->chavesHistoricas()->create(['chave' => $daEucatex(2), 'status' => 'importada', 'fornecedor_nome' => 'EUCATEX S/A INDUSTRIA E COMERCIO']);
+    $outra = $this->company->chavesHistoricas()->create(['chave' => chaveApi(3), 'status' => 'importada', 'fornecedor_nome' => 'OUTRO FORNECEDOR LTDA']);
+
+    Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
+        ->set('q', 'eucatex')
+        ->assertSee('Selecionar todas (2)')
+        ->assertDontSee('OUTRO FORNECEDOR')
+        ->set('q', '')
+        ->call('filtrarFornecedor', $eucatex)
+        ->assertSee('Selecionar todas (2)')
+        ->call('marcarFiltradas')
+        ->call('consultar');
+
+    expect($this->company->chavesHistoricas()->where('status', 'pendente')->count())->toBe(2)
+        ->and($outra->refresh()->status)->toBe(ChaveHistoricaStatus::Importada);
+});

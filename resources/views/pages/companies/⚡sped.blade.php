@@ -35,6 +35,8 @@ new #[Title('Chaves do SPED')] class extends Component {
     #[Url] public string $mes = '';
     #[Url] public string $q = '';
     #[Url] public string $natureza = '';
+    /** CNPJ do emitente (posições 7 a 20 da chave), escolhido ao clicar no fornecedor. */
+    #[Url] public string $fornecedor = '';
 
     /** @var list<int|string> */
     public array $selecionados = [];
@@ -54,7 +56,7 @@ new #[Title('Chaves do SPED')] class extends Component {
 
     public function updated(string $property): void
     {
-        if (in_array($property, ['status', 'mes', 'q', 'natureza'], true)) {
+        if (in_array($property, ['status', 'mes', 'q', 'natureza', 'fornecedor'], true)) {
             $this->resetPage();
             // Mudou o filtro: "todas" já não significa as mesmas chaves.
             $this->todas = false;
@@ -90,7 +92,7 @@ new #[Title('Chaves do SPED')] class extends Component {
             $total = ['lidas' => $total['lidas'] + $r['lidas'], 'novas' => $total['novas'] + $r['novas'], 'com_xml' => $total['com_xml'] + $r['com_xml']];
         }
 
-        $this->reset('speds', 'mes', 'q', 'natureza', 'selecionados', 'todas');
+        $this->reset('speds', 'mes', 'q', 'natureza', 'fornecedor', 'selecionados', 'todas');
         unset($this->contagem, $this->resumo, $this->meses, $this->naturezas);
         $this->importacao = $total;
         $this->status = ChaveHistoricaStatus::Importada->value;
@@ -100,13 +102,18 @@ new #[Title('Chaves do SPED')] class extends Component {
     /** @return Builder<ChaveHistorica> */
     private function filtradas(): Builder
     {
-        $termo = preg_replace('/\D/', '', $this->q);
+        $busca = trim($this->q);
+        $digitos = (string) preg_replace('/\D/', '', $busca);
+        // Com letras é nome do fornecedor; só números (com ou sem pontuação) é trecho de chave ou CNPJ.
+        $porNome = preg_match('/\pL/u', $busca) === 1;
 
         return $this->company->chavesHistoricas()->getQuery()
             ->when(ChaveHistoricaStatus::tryFrom($this->status), fn (Builder $q, ChaveHistoricaStatus $s) => $q->where('status', $s))
             ->when(preg_match('/^\d{4}-\d{2}$/', $this->mes) === 1, fn (Builder $q) => $q->whereBetween('sped_data', [$this->mes.'-01', Carbon\CarbonImmutable::parse($this->mes.'-01')->endOfMonth()->toDateString()]))
             ->when(NaturezaCompra::tryFrom($this->natureza), fn (Builder $q, NaturezaCompra $n) => $q->where('natureza', $n))
-            ->when($termo !== '', fn (Builder $q) => $q->where('chave', 'like', '%'.$termo.'%'));
+            ->when(preg_match('/^\d{14}$/', $this->fornecedor) === 1, fn (Builder $q) => $q->where('chave', 'like', '______'.$this->fornecedor.'%'))
+            ->when($porNome, fn (Builder $q) => $q->where('fornecedor_nome', 'ilike', '%'.addcslashes($busca, '%_\\').'%'))
+            ->when(! $porNome && $digitos !== '', fn (Builder $q) => $q->where('chave', 'like', '%'.$digitos.'%'));
     }
 
     #[Computed]
@@ -177,9 +184,29 @@ new #[Title('Chaves do SPED')] class extends Component {
             ->whereIn('chave', $this->chaves->getCollection()->pluck('chave')->all())->pluck('id', 'chave')->all();
     }
 
+    /** Mostra só as notas deste fornecedor (pelo CNPJ da chave), para marcar todas de uma vez. */
+    public function filtrarFornecedor(string $cnpj): void
+    {
+        $this->fornecedor = preg_match('/^\d{14}$/', $cnpj) === 1 ? $cnpj : '';
+        $this->todas = false;
+        $this->resetPage();
+    }
+
+    /** Nome do fornecedor do filtro, para a etiqueta acima da lista. */
+    #[Computed]
+    public function fornecedorFiltrado(): ?string
+    {
+        if ($this->fornecedor === '') {
+            return null;
+        }
+
+        return $this->company->chavesHistoricas()->where('chave', 'like', '______'.$this->fornecedor.'%')->whereNotNull('fornecedor_nome')->value('fornecedor_nome')
+            ?? Fmt::cnpj($this->fornecedor);
+    }
+
     public function limparFiltros(): void
     {
-        $this->reset('status', 'mes', 'q', 'natureza', 'todas');
+        $this->reset('status', 'mes', 'q', 'natureza', 'fornecedor', 'todas');
         $this->resetPage();
     }
 
@@ -254,7 +281,7 @@ new #[Title('Chaves do SPED')] class extends Component {
     // Ordem da barra: o que já está resolvido primeiro, o que falta escolher por último.
     $ordem = [ChaveHistoricaStatus::Encontrada, ChaveHistoricaStatus::Pendente, ChaveHistoricaStatus::NaoEncontrada, ChaveHistoricaStatus::Erro, ChaveHistoricaStatus::Importada];
     $mesLabel = fn (?string $data) => $data ? ucfirst(Carbon\CarbonImmutable::parse($data)->locale('pt_BR')->translatedFormat('M/Y')) : null;
-    $filtrosAtivos = $q !== '' || $mes !== '' || $natureza !== '' || $status !== '';
+    $filtrosAtivos = $q !== '' || $mes !== '' || $natureza !== '' || $status !== '' || $fornecedor !== '';
 @endphp
 <section class="w-full space-y-6" @if ($naFila > 0) wire:poll.5s @endif x-data="{ enviar: {{ $total === 0 ? 'true' : 'false' }}, arrastando: false, progresso: 0 }">
     {{-- Cabeçalho --}}
@@ -379,7 +406,7 @@ new #[Title('Chaves do SPED')] class extends Component {
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex w-full flex-wrap items-center gap-2 lg:w-auto">
                 <div class="min-w-0 basis-full sm:basis-64">
-                    <flux:input size="sm" wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Buscar por chave ou CNPJ')" clearable :aria-label="__('Buscar chave ou CNPJ do fornecedor')" />
+                    <flux:input size="sm" wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Fornecedor, CNPJ ou chave')" clearable :aria-label="__('Buscar por nome do fornecedor, CNPJ ou chave')" />
                 </div>
                 @if ($this->naturezas)
                     <div class="w-full sm:w-52">
@@ -409,11 +436,24 @@ new #[Title('Chaves do SPED')] class extends Component {
             @endif
         </div>
 
+        @if ($this->fornecedorFiltrado)
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">{{ __('Fornecedor') }}</span>
+                <span class="inline-flex items-center gap-1.5 border border-zinc-900 bg-zinc-900 py-1 ps-2.5 pe-1 text-white dark:border-white dark:bg-white dark:text-zinc-900">
+                    <span class="font-medium">{{ $this->fornecedorFiltrado }}</span>
+                    <span class="tabular-nums opacity-60">{{ Fmt::cnpj($fornecedor) }}</span>
+                    <button type="button" wire:click="filtrarFornecedor('')" class="ms-0.5 p-0.5 opacity-70 hover:opacity-100 focus-visible:outline-2" aria-label="{{ __('Tirar o filtro de fornecedor') }}">
+                        <flux:icon.x-mark variant="micro" />
+                    </button>
+                </span>
+            </div>
+        @endif
+
         {{-- Lista agrupada pelo dia de emissão no SPED --}}
         @php
             $grade = 'grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 md:grid-cols-[2.75rem_minmax(0,1fr)_11rem_9.5rem_11rem] md:gap-x-5';
         @endphp
-        <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="status,mes,q,natureza,gotoPage,nextPage,previousPage,importar,marcarFiltradas,desmarcar">
+        <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="status,mes,q,natureza,fornecedor,filtrarFornecedor,limparFiltros,gotoPage,nextPage,previousPage,importar,marcarFiltradas,desmarcar">
             <div class="{{ $grade }} border-b border-zinc-200 py-2 pe-4 text-xs font-medium tracking-wide text-zinc-500 uppercase max-md:hidden dark:border-zinc-700 dark:text-zinc-400" aria-hidden="true">
                 <span></span>
                 <span>{{ __('Fornecedor e nota') }}</span>
@@ -470,7 +510,16 @@ new #[Title('Chaves do SPED')] class extends Component {
                                     </span>
 
                                     <div class="min-w-0">
-                                        <p class="truncate font-medium text-zinc-900 dark:text-white">{{ $nome ?? Fmt::cnpj($cnpj) }}</p>
+                                        <p class="flex min-w-0 items-center gap-1.5">
+                                            <span class="truncate font-medium text-zinc-900 dark:text-white">{{ $nome ?? Fmt::cnpj($cnpj) }}</span>
+                                            @if ($fornecedor === '')
+                                                <button type="button" wire:click.prevent.stop="filtrarFornecedor('{{ $cnpj }}')"
+                                                    class="relative z-10 inline-flex shrink-0 items-center gap-1 px-1 text-xs text-zinc-400 opacity-0 transition-opacity group-hover/linha:opacity-100 hover:text-zinc-900 focus-visible:opacity-100 dark:hover:text-white"
+                                                    aria-label="{{ __('Ver só as notas de :f', ['f' => $nome ?? Fmt::cnpj($cnpj)]) }}">
+                                                    <flux:icon.funnel variant="micro" />{{ __('Só deste fornecedor') }}
+                                                </button>
+                                            @endif
+                                        </p>
                                         <p class="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
                                             <span class="shrink-0 font-medium text-zinc-700 tabular-nums dark:text-zinc-300">{{ __('NF :n', ['n' => $numero]) }}<span class="font-normal text-zinc-400 dark:text-zinc-500">/{{ $serie }}</span></span>
                                             <span aria-hidden="true">·</span>
