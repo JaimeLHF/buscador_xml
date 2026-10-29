@@ -3,6 +3,7 @@
 namespace App\Services\MeuDanfe;
 
 use App\Enums\ChaveHistoricaStatus;
+use App\Enums\NaturezaCompra;
 use App\Jobs\BuscarChavesHistoricas;
 use App\Models\Company;
 use Carbon\CarbonImmutable;
@@ -19,28 +20,92 @@ class SpedChaves
         return array_keys(self::registros($conteudo));
     }
 
+    /** Código IBGE da UF (dois primeiros dígitos do município do 0150) para a sigla. */
+    private const UF_IBGE = [
+        '11' => 'RO', '12' => 'AC', '13' => 'AM', '14' => 'RR', '15' => 'PA', '16' => 'AP', '17' => 'TO',
+        '21' => 'MA', '22' => 'PI', '23' => 'CE', '24' => 'RN', '25' => 'PB', '26' => 'PE', '27' => 'AL', '28' => 'SE', '29' => 'BA',
+        '31' => 'MG', '32' => 'ES', '33' => 'RJ', '35' => 'SP', '41' => 'PR', '42' => 'SC', '43' => 'RS',
+        '50' => 'MS', '51' => 'MT', '52' => 'GO', '53' => 'DF',
+    ];
+
+    /** Situação do documento no C100 (COD_SIT) que diz que a nota não vale: cancelada, denegada ou inutilizada. */
+    public const SITUACOES_SEM_NOTA = ['02', '03', '04', '05'];
+
     /**
-     * Valor (VL_DOC) e emissão (DT_DOC) de cada chave, guardados para a conferência com o XML do Meu Danfe.
+     * O que o SPED diz de cada chave: valor (VL_DOC) e emissão (DT_DOC) para a conferência com o XML remontado,
+     * fornecedor (0150 pelo COD_PART), CFOP de maior valor no C190, situação (COD_SIT) e impostos do C100.
      *
-     * @return array<string, array{valor: ?string, data: ?string}>
+     * @return array<string, array{valor: ?string, data: ?string, fornecedor_nome: ?string, fornecedor_uf: ?string, cfop: ?string, natureza: ?string, sped_situacao: ?string, sped_impostos: array<string, string>}>
      */
     public static function registros(string $conteudo): array
     {
+        // O PVA grava o arquivo em Latin-1; o banco só aceita UTF-8 (os nomes têm acento).
+        if (! mb_check_encoding($conteudo, 'UTF-8')) {
+            $conteudo = mb_convert_encoding($conteudo, 'UTF-8', 'ISO-8859-1');
+        }
+
+        $participantes = [];
         $registros = [];
+        $atual = null;
+        $cfops = [];
+        $maiorOperacao = [];
 
-        foreach (preg_split('/\R/', $conteudo) as $linha) {
-            if (! str_starts_with($linha, '|C100|')) {
-                continue;
-            }
+        foreach (preg_split('/\R/', $conteudo) ?: [] as $linha) {
+            // Campo vazio no fim da linha some no explode: completa até o último usado (VL_COFINS, posição 27).
+            $campos = array_pad(explode('|', $linha), 30, '');
 
-            $campos = explode('|', $linha);
+            switch ($campos[1]) {
+                case '0150':
+                    $participantes[$campos[2]] = [
+                        'nome' => mb_substr(trim($campos[3]), 0, 120) ?: null,
+                        'uf' => self::UF_IBGE[substr($campos[8], 0, 2)] ?? null,
+                    ];
+                    break;
 
-            if (($campos[2] ?? '') === '0' && ($campos[3] ?? '') === '1' && ($campos[5] ?? '') === '55' && preg_match('/^\d{44}$/', $campos[9] ?? '')) {
-                $registros[$campos[9]] = ['valor' => self::valor($campos[12] ?? ''), 'data' => self::data($campos[10] ?? '')];
+                case 'C100':
+                    $atual = null;
+
+                    if ($campos[2] === '0' && $campos[3] === '1' && $campos[5] === '55' && preg_match('/^\d{44}$/', $campos[9])) {
+                        $atual = $campos[9];
+                        $participante = $participantes[$campos[4]] ?? null;
+                        $registros[$atual] = [
+                            'valor' => self::valor($campos[12]),
+                            'data' => self::data($campos[10]),
+                            'fornecedor_nome' => $participante['nome'] ?? null,
+                            'fornecedor_uf' => $participante['uf'] ?? null,
+                            'sped_situacao' => preg_match('/^\d{2}$/', $campos[6]) ? $campos[6] : null,
+                            'sped_impostos' => array_filter([
+                                'icms' => self::valor($campos[22]),
+                                'icms_st' => self::valor($campos[24]),
+                                'ipi' => self::valor($campos[25]),
+                                'pis' => self::valor($campos[26]),
+                                'cofins' => self::valor($campos[27]),
+                                'desconto' => self::valor($campos[14]),
+                                'frete' => self::valor($campos[18]),
+                            ], fn (?string $v) => $v !== null && (float) $v != 0.0),
+                        ];
+                    }
+                    break;
+
+                case 'C190':
+                    // A nota pode ter vários CFOPs: fica o de maior valor de operação.
+                    $operacao = (float) (self::valor($campos[5]) ?? 0);
+
+                    if ($atual !== null && preg_match('/^\d{4}$/', $campos[3]) && $operacao >= ($maiorOperacao[$atual] ?? -1.0)) {
+                        $maiorOperacao[$atual] = $operacao;
+                        $cfops[$atual] = $campos[3];
+                    }
+                    break;
             }
         }
 
-        return $registros;
+        $resultado = [];
+
+        foreach ($registros as $chave => $r) {
+            $resultado[$chave] = [...$r, 'cfop' => $cfops[$chave] ?? null, 'natureza' => NaturezaCompra::doCfop($cfops[$chave] ?? null)?->value];
+        }
+
+        return $resultado;
     }
 
     /** @return array{lidas: int, novas: int, com_xml: int} */
@@ -64,11 +129,10 @@ class SpedChaves
                 'chave' => $chave,
                 'status' => ChaveHistoricaStatus::Importada->value,
                 'tentativas' => 0,
-                'sped_valor' => $registros[$chave]['valor'],
-                'sped_data' => $registros[$chave]['data'],
+                ...self::detalhes($registros[$chave]),
                 'created_at' => $agora,
                 'updated_at' => $agora,
-            ], $lote), ['company_id', 'chave'], ['sped_valor', 'sped_data', 'updated_at']);
+            ], $lote), ['company_id', 'chave'], [...self::COLUNAS_SPED, 'updated_at']);
         }
 
         // Chave que já tem XML completo não entra na fila, mas fica registrada como encontrada: a cobertura precisa
@@ -79,11 +143,10 @@ class SpedChaves
                 'chave' => $chave,
                 'status' => ChaveHistoricaStatus::Encontrada->value,
                 'tentativas' => 0,
-                'sped_valor' => $registros[$chave]['valor'],
-                'sped_data' => $registros[$chave]['data'],
+                ...self::detalhes($registros[$chave]),
                 'created_at' => $agora,
                 'updated_at' => $agora,
-            ], $lote), ['company_id', 'chave'], ['sped_valor', 'sped_data', 'updated_at']);
+            ], $lote), ['company_id', 'chave'], [...self::COLUNAS_SPED, 'updated_at']);
         }
 
         return ['lidas' => count($chaves), 'novas' => $novas, 'com_xml' => count($jaTem)];
@@ -99,7 +162,7 @@ class SpedChaves
     {
         $selecionaveis = array_values(array_map(fn (ChaveHistoricaStatus $s) => $s->value, array_filter(ChaveHistoricaStatus::cases(), fn (ChaveHistoricaStatus $s) => $s->selecionavel())));
 
-        $n = $company->chavesHistoricas()->whereKey($ids)->whereIn('status', $selecionaveis)
+        $n = $company->chavesHistoricas()->whereKey($ids)->whereIn('status', $selecionaveis)->consultaveis()
             ->update(['status' => ChaveHistoricaStatus::Pendente->value, 'tentativas' => 0, 'ultimo_erro' => null, 'updated_at' => now()]);
 
         if ($n > 0) {
@@ -107,6 +170,26 @@ class SpedChaves
         }
 
         return $n;
+    }
+
+    private const COLUNAS_SPED = ['sped_valor', 'sped_data', 'fornecedor_nome', 'fornecedor_uf', 'cfop', 'natureza', 'sped_situacao', 'sped_impostos'];
+
+    /**
+     * @param  array{valor: ?string, data: ?string, fornecedor_nome: ?string, fornecedor_uf: ?string, cfop: ?string, natureza: ?string, sped_situacao: ?string, sped_impostos: array<string, string>}  $r
+     * @return array<string, mixed>
+     */
+    private static function detalhes(array $r): array
+    {
+        return [
+            'sped_valor' => $r['valor'],
+            'sped_data' => $r['data'],
+            'fornecedor_nome' => $r['fornecedor_nome'],
+            'fornecedor_uf' => $r['fornecedor_uf'],
+            'cfop' => $r['cfop'],
+            'natureza' => $r['natureza'],
+            'sped_situacao' => $r['sped_situacao'],
+            'sped_impostos' => $r['sped_impostos'] === [] ? null : json_encode($r['sped_impostos']),
+        ];
     }
 
     /** VL_DOC vem com vírgula decimal e sem separador de milhar ("1271,00"). */

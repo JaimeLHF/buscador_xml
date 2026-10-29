@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ChaveHistoricaStatus;
+use App\Enums\NaturezaCompra;
 use App\Enums\OrganizationRole;
 use App\Jobs\BuscarChavesHistoricas;
 use App\Models\AuditLog;
@@ -137,4 +138,50 @@ it('never shows the name of the lookup provider to the user', function () {
         ->assertSee('Falha na consulta (HTTP 500).')
         ->assertDontSee('Meu Danfe')
         ->assertDontSee('meudanfe');
+});
+
+/** C100 completo do leiaute do EFD ICMS/IPI, com fornecedor (COD_PART), situação e impostos. */
+function c100(string $part, string $sit, string $num, string $chave, string $valor, string $icms = '0', string $ipi = '0'): string
+{
+    // REG|IND_OPER|IND_EMIT|COD_PART|COD_MOD|COD_SIT|SER|NUM_DOC|CHV_NFE|DT_DOC|DT_E_S|VL_DOC|IND_PGTO|VL_DESC|VL_ABAT_NT|VL_MERC|IND_FRT|VL_FRT|VL_SEG|VL_OUT_DA|VL_BC_ICMS|VL_ICMS|VL_BC_ICMS_ST|VL_ICMS_ST|VL_IPI|VL_PIS|VL_COFINS|VL_PIS_ST|VL_COFINS_ST
+    return "|C100|0|1|{$part}|55|{$sit}|1|{$num}|{$chave}|05102026|06102026|{$valor}|1|0|0|{$valor}|9|0|0|0|{$valor}|{$icms}|0|0|{$ipi}|0|0|0|0|";
+}
+
+it('reads supplier, purchase nature, SPED status and taxes, and never offers a note cancelled in the SPED', function () {
+    Queue::fake();
+    // Arquivo em Latin-1, como o PVA grava.
+    $sped = mb_convert_encoding(implode("\r\n", [
+        '|0150|F1|INDÚSTRIA DE MÓVEIS SÃO JOÃO LTDA|1058|11222333000181||255|4205407||RUA|1|||',
+        '|0150|F2|POSTO CENTRAL LTDA|1058|11444777000161||255|4314902||RUA|1|||',
+        c100('F1', '00', '124', chaveApi(124), '1000,00', '120,00', '50,00'),
+        '|C190|000|1102|12,00|200,00|1000,00|120,00|0|0|0|0||',
+        '|C190|000|1101|12,00|800,00|1000,00|0|0|0|0|0||',
+        c100('F2', '02', '125', chaveApi(125), '300,00'),
+        '|C190|060|1653|0|300,00|0|0|0|0|0|0||',
+    ]), 'ISO-8859-1', 'UTF-8');
+
+    $page = Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
+        ->set('speds', [UploadedFile::fake()->createWithContent('sped.txt', $sped)])
+        ->call('importar')
+        ->assertSee('INDÚSTRIA DE MÓVEIS SÃO JOÃO LTDA')
+        ->assertSee('SC')
+        ->assertSee('Industrialização')
+        ->assertSee('CFOP 1101')
+        ->assertSee('ICMS R$ 120,00 · IPI R$ 50,00')
+        ->assertSee('Cancelada no SPED');
+
+    $industria = $this->company->chavesHistoricas()->where('chave', chaveApi(124))->sole();
+    $cancelada = $this->company->chavesHistoricas()->where('chave', chaveApi(125))->sole();
+    expect($industria->fornecedor_uf)->toBe('SC')
+        ->and($industria->natureza)->toBe(NaturezaCompra::Industrializacao)
+        ->and($industria->sped_impostos)->toBe(['icms' => '120.00', 'ipi' => '50.00'])
+        ->and($cancelada->natureza)->toBe(NaturezaCompra::Combustivel);
+
+    $page->call('marcarFiltradas')->assertSet('selecionados', [$industria->id])
+        ->set('natureza', 'combustivel')->assertSee('POSTO CENTRAL LTDA')->assertDontSee('SÃO JOÃO');
+
+    // Mesmo forçando a seleção pelo navegador, a cancelada no SPED não vai para a consulta.
+    $page->set('selecionados', [$cancelada->id])->call('consultar');
+    expect($cancelada->refresh()->status)->toBe(ChaveHistoricaStatus::Importada);
+    Queue::assertNothingPushed();
 });

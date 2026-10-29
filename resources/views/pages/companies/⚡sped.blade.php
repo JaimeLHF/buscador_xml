@@ -2,6 +2,7 @@
 
 use App\Enums\AuditAcao;
 use App\Enums\ChaveHistoricaStatus;
+use App\Enums\NaturezaCompra;
 use App\Models\ChaveHistorica;
 use App\Models\Company;
 use App\Services\MeuDanfe\MeuDanfeClient;
@@ -25,8 +26,6 @@ new #[Title('Chaves do SPED')] class extends Component {
     /** Teto de uma consulta completa em lote (cada chave é cobrada). */
     public const LOTE_MAXIMO = 1000;
 
-    public const PRECO_POR_CHAVE = 0.03;
-
     public Company $company;
 
     /** @var list<Illuminate\Http\UploadedFile> */
@@ -38,6 +37,7 @@ new #[Title('Chaves do SPED')] class extends Component {
     #[Url] public string $status = '';
     #[Url] public string $mes = '';
     #[Url] public string $q = '';
+    #[Url] public string $natureza = '';
 
     /** @var list<int|string> */
     public array $selecionados = [];
@@ -51,7 +51,7 @@ new #[Title('Chaves do SPED')] class extends Component {
 
     public function updated(string $property): void
     {
-        if (in_array($property, ['status', 'mes', 'q'], true)) {
+        if (in_array($property, ['status', 'mes', 'q', 'natureza'], true)) {
             $this->resetPage();
         }
     }
@@ -84,13 +84,14 @@ new #[Title('Chaves do SPED')] class extends Component {
         return $this->company->chavesHistoricas()->getQuery()
             ->when(ChaveHistoricaStatus::tryFrom($this->status), fn (Builder $q, ChaveHistoricaStatus $s) => $q->where('status', $s))
             ->when(preg_match('/^\d{4}-\d{2}$/', $this->mes) === 1, fn (Builder $q) => $q->whereBetween('sped_data', [$this->mes.'-01', Carbon\CarbonImmutable::parse($this->mes.'-01')->endOfMonth()->toDateString()]))
+            ->when(NaturezaCompra::tryFrom($this->natureza), fn (Builder $q, NaturezaCompra $n) => $q->where('natureza', $n))
             ->when($termo !== '', fn (Builder $q) => $q->where('chave', 'like', '%'.$termo.'%'));
     }
 
     #[Computed]
     public function chaves()
     {
-        return $this->filtradas()->orderByDesc('sped_data')->orderBy('id')->paginate(50);
+        return $this->filtradas()->orderByRaw('sped_data desc nulls last')->orderBy('id')->paginate(50);
     }
 
     /** Nome do fornecedor a partir das notas que a empresa já recebeu dele (o SPED só traz a chave). */
@@ -118,17 +119,25 @@ new #[Title('Chaves do SPED')] class extends Component {
             ->selectRaw("distinct to_char(sped_data, 'YYYY-MM') as mes")->orderByDesc('mes')->pluck('mes')->all();
     }
 
+    /** Naturezas presentes nas chaves da empresa, com a quantidade de cada uma. @return array<string, int> */
+    #[Computed]
+    public function naturezas(): array
+    {
+        return $this->company->chavesHistoricas()->toBase()->whereNotNull('natureza')->groupBy('natureza')
+            ->selectRaw('natureza, count(*) as n')->orderByDesc('n')->pluck('n', 'natureza')->map(fn ($n) => (int) $n)->all();
+    }
+
     #[Computed]
     public function selecionaveisFiltradas(): int
     {
-        return $this->filtradas()->whereIn('status', self::statusSelecionaveis())->count();
+        return $this->filtradas()->whereIn('status', self::statusSelecionaveis())->consultaveis()->count();
     }
 
     /** @return list<int> */
     #[Computed]
     public function selecionaveisNaPagina(): array
     {
-        return $this->chaves->getCollection()->filter(fn (ChaveHistorica $c) => $c->status->selecionavel())->pluck('id')->all();
+        return $this->chaves->getCollection()->filter(fn (ChaveHistorica $c) => $c->consultavel())->pluck('id')->all();
     }
 
     /**
@@ -167,8 +176,8 @@ new #[Title('Chaves do SPED')] class extends Component {
 
     public function marcarFiltradas(): void
     {
-        $this->selecionados = $this->filtradas()->whereIn('status', self::statusSelecionaveis())
-            ->orderByDesc('sped_data')->orderBy('id')->limit(self::LOTE_MAXIMO)->pluck('id')->all();
+        $this->selecionados = $this->filtradas()->whereIn('status', self::statusSelecionaveis())->consultaveis()
+            ->orderByRaw('sped_data desc nulls last')->orderBy('id')->limit(self::LOTE_MAXIMO)->pluck('id')->all();
     }
 
     public function desmarcar(): void
@@ -213,14 +222,13 @@ new #[Title('Chaves do SPED')] class extends Component {
 @php
     $naFila = $this->contagem[ChaveHistoricaStatus::Pendente->value] ?? 0;
     $total = array_sum($this->contagem);
-    $custo = count($selecionados) * $this::PRECO_POR_CHAVE;
 @endphp
 <section class="w-full space-y-6" @if ($naFila > 0) wire:poll.5s @endif>
     <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
             <flux:link :href="route('companies.show', $company)" wire:navigate class="text-sm">← {{ $company->nome_fantasia ?: $company->razao_social }}</flux:link>
             <flux:heading size="xl" level="1" class="mt-1">{{ __('Chaves do SPED') }}</flux:heading>
-            <flux:text class="mt-1 max-w-2xl">{{ __('Envie os TXT do SPED EFD ICMS/IPI baixados do ReceitanetBX. As notas de entrada aparecem aqui; marque as que quer baixar completas (R$ 0,03 por chave) e consulte em lote.') }}</flux:text>
+            <flux:text class="mt-1 max-w-2xl">{{ __('Envie os TXT do SPED EFD ICMS/IPI baixados do ReceitanetBX. As notas de entrada aparecem aqui; marque as que quer baixar completas e consulte em lote.') }}</flux:text>
         </div>
     </div>
 
@@ -256,7 +264,7 @@ new #[Title('Chaves do SPED')] class extends Component {
             $pagina = $this->selecionaveisNaPagina;
             $marcadas = array_map('intval', $selecionados);
             $paginaToda = $pagina !== [] && array_diff($pagina, $marcadas) === [];
-            $grade = 'grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 md:grid-cols-[2.75rem_minmax(0,1fr)_7rem_9rem_11rem] md:gap-x-6';
+            $grade = 'grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 md:grid-cols-[2.75rem_minmax(0,1fr)_6rem_10rem_9.5rem_11rem] md:gap-x-5';
         @endphp
 
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -275,9 +283,19 @@ new #[Title('Chaves do SPED')] class extends Component {
             </div>
 
             <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
-                <div class="min-w-0 flex-1 sm:w-60 sm:flex-none">
+                <div class="min-w-0 basis-full sm:w-60 sm:basis-auto">
                     <flux:input size="sm" wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Chave ou CNPJ')" clearable :aria-label="__('Buscar chave ou CNPJ do fornecedor')" />
                 </div>
+                @if ($this->naturezas)
+                    <div class="w-48 shrink-0">
+                        <flux:select size="sm" wire:model.live="natureza" :aria-label="__('Natureza da compra')">
+                            <flux:select.option value="">{{ __('Todas as naturezas') }}</flux:select.option>
+                            @foreach ($this->naturezas as $valor => $n)
+                                <flux:select.option :value="$valor">{{ NaturezaCompra::from($valor)->label() }} ({{ number_format($n, 0, ',', '.') }})</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                    </div>
+                @endif
                 <div class="w-40 shrink-0">
                 <flux:select size="sm" wire:model.live="mes" :aria-label="__('Mês do SPED')">
                     <flux:select.option value="">{{ __('Todos os meses') }}</flux:select.option>
@@ -289,8 +307,8 @@ new #[Title('Chaves do SPED')] class extends Component {
             </div>
         </div>
 
-        <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="status,mes,q,gotoPage,nextPage,previousPage,importar">
-            {{-- Barra de seleção: fica presa no topo enquanto há chaves marcadas, com o custo antes de consultar. --}}
+        <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="status,mes,q,natureza,gotoPage,nextPage,previousPage,importar">
+            {{-- Barra de seleção: fica presa no topo enquanto há chaves marcadas. --}}
             @if ($this->selecionaveisFiltradas > 0 || $selecionados)
                 <div @class([
                     'sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2',
@@ -300,7 +318,6 @@ new #[Title('Chaves do SPED')] class extends Component {
                     @if ($selecionados)
                         <p class="text-sm">
                             <span class="font-semibold tabular-nums">{{ trans_choice(':count chave marcada|:count chaves marcadas', count($selecionados), ['count' => number_format(count($selecionados), 0, ',', '.')]) }}</span>
-                            <span class="opacity-70">· {{ __('custo estimado :v', ['v' => Fmt::money($custo)]) }}</span>
                         </p>
                         <div class="flex flex-wrap items-center gap-2">
                             <button type="button" wire:click="desmarcar" class="rounded px-2.5 py-1 text-sm opacity-80 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2">{{ __('Desmarcar') }}</button>
@@ -325,6 +342,7 @@ new #[Title('Chaves do SPED')] class extends Component {
                 </span>
                 <span>{{ __('Fornecedor') }}</span>
                 <span class="max-md:hidden">{{ __('Nota') }}</span>
+                <span class="max-md:hidden">{{ __('Natureza') }}</span>
                 <span class="text-end">{{ __('Valor no SPED') }}</span>
                 <span class="max-md:hidden">{{ __('Situação') }}</span>
             </div>
@@ -350,9 +368,14 @@ new #[Title('Chaves do SPED')] class extends Component {
                                 $cnpj = substr($c->chave, 6, 14);
                                 $numero = ltrim(substr($c->chave, 25, 9), '0') ?: '0';
                                 $serie = ltrim(substr($c->chave, 22, 3), '0') ?: '0';
-                                $nome = $this->fornecedores[$cnpj] ?? null;
-                                $marcavel = $c->status->selecionavel();
-                                [$ponto, $cor] = $tom($c->status);
+                                $nome = $c->fornecedor_nome ?? $this->fornecedores[$cnpj] ?? null;
+                                $marcavel = $c->consultavel();
+                                $semNota = $c->semNotaNoSped() && $c->status !== ChaveHistoricaStatus::Encontrada;
+                                [$ponto, $cor] = $semNota ? ['bg-zinc-400', 'text-zinc-500 dark:text-zinc-400'] : $tom($c->status);
+                                $situacao = $semNota ? __('Cancelada no SPED') : $c->status->label();
+                                $impostos = $c->sped_impostos ?? [];
+                                $rotulosImposto = ['icms' => 'ICMS', 'icms_st' => 'ICMS-ST', 'ipi' => 'IPI', 'pis' => 'PIS', 'cofins' => 'COFINS', 'desconto' => __('Desconto'), 'frete' => __('Frete')];
+                                $principais = array_intersect_key($impostos, array_flip(['icms', 'icms_st', 'ipi']));
                                 $notaId = $this->notas[$c->chave] ?? null;
                             @endphp
                             <li wire:key="chave-{{ $c->id }}">
@@ -369,13 +392,11 @@ new #[Title('Chaves do SPED')] class extends Component {
                                     <div class="min-w-0">
                                         <p class="truncate font-medium text-zinc-900 dark:text-white">{{ $nome ?? Fmt::cnpj($cnpj) }}</p>
                                         <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                                            @if ($nome)
-                                                <span class="tabular-nums">{{ Fmt::cnpj($cnpj) }}</span> ·
-                                            @endif
+                                            @if ($nome)<span class="tabular-nums">{{ Fmt::cnpj($cnpj) }}</span> · @endif @if ($c->fornecedor_uf)<span>{{ $c->fornecedor_uf }}</span> · @endif
                                             <span class="font-mono tracking-tight" title="{{ __('Chave de acesso') }}">{{ trim(chunk_split($c->chave, 4, ' ')) }}</span>
                                         </p>
                                         <p class="mt-0.5 flex items-center gap-1.5 text-xs md:hidden {{ $cor }}">
-                                            <span class="size-1.5 shrink-0 rounded-full {{ $ponto }}" aria-hidden="true"></span>{{ $c->status->label() }} · {{ __('nº :n', ['n' => $numero]) }}
+                                            <span class="size-1.5 shrink-0 rounded-full {{ $ponto }}" aria-hidden="true"></span>{{ $situacao }}@if ($c->natureza) · {{ $c->natureza->label() }}@endif
                                         </p>
                                     </div>
 
@@ -383,15 +404,30 @@ new #[Title('Chaves do SPED')] class extends Component {
                                         {{ $numero }}<span class="text-zinc-400 dark:text-zinc-500"> / {{ $serie }}</span>
                                     </span>
 
-                                    <span class="text-end text-sm font-medium tabular-nums text-zinc-900 dark:text-white">{{ $c->sped_valor !== null ? Fmt::money($c->sped_valor) : '—' }}</span>
+                                    <span class="truncate text-sm text-zinc-700 max-md:hidden dark:text-zinc-300" @if ($c->cfop) title="{{ __('CFOP :c', ['c' => $c->cfop]) }}" @endif>
+                                        {{ $c->natureza?->label() ?? '—' }}
+                                        @if ($c->cfop)
+                                            <span class="block text-xs tabular-nums text-zinc-400 dark:text-zinc-500">CFOP {{ $c->cfop }}</span>
+                                        @endif
+                                    </span>
+
+                                    {{-- Impostos do C100: os de crédito à vista, o resto no título. --}}
+                                    <div class="text-end" @if ($impostos) title="{{ collect($impostos)->map(fn ($v, $k) => ($rotulosImposto[$k] ?? $k).' '.Fmt::money($v))->implode(' · ') }}" @endif>
+                                        <p class="text-sm font-medium tabular-nums text-zinc-900 dark:text-white">{{ $c->sped_valor !== null ? Fmt::money($c->sped_valor) : '—' }}</p>
+                                        @if ($principais)
+                                            <p class="truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                                                {{ collect($principais)->map(fn ($v, $k) => $rotulosImposto[$k].' '.Fmt::money($v))->implode(' · ') }}
+                                            </p>
+                                        @endif
+                                    </div>
 
                                     <div class="min-w-0 max-md:hidden">
                                         <p class="flex items-center gap-2 text-sm {{ $cor }}">
                                             <span @class(['size-2 shrink-0 rounded-full', $ponto, 'animate-pulse' => $c->status === ChaveHistoricaStatus::Pendente]) aria-hidden="true"></span>
                                             @if ($notaId)
-                                                <a href="{{ route('documents.show', $notaId) }}" wire:navigate class="underline decoration-current/30 underline-offset-4 hover:decoration-current">{{ $c->status->label() }}</a>
+                                                <a href="{{ route('documents.show', $notaId) }}" wire:navigate class="underline decoration-current/30 underline-offset-4 hover:decoration-current">{{ $situacao }}</a>
                                             @else
-                                                {{ $c->status->label() }}
+                                                {{ $situacao }}
                                             @endif
                                         </p>
                                         @if ($c->ultimo_erro && ! in_array($c->status, [ChaveHistoricaStatus::Encontrada, ChaveHistoricaStatus::Importada], true))
@@ -406,7 +442,7 @@ new #[Title('Chaves do SPED')] class extends Component {
             @empty
                 <div class="px-4 py-12 text-center">
                     <flux:heading>{{ __('Nenhuma chave com esses filtros.') }}</flux:heading>
-                    <flux:button size="sm" variant="ghost" class="mt-2" wire:click="$set('status', ''); $set('mes', ''); $set('q', '')">{{ __('Limpar filtros') }}</flux:button>
+                    <flux:button size="sm" variant="ghost" class="mt-2" wire:click="$set('status', ''); $set('mes', ''); $set('q', ''); $set('natureza', '')">{{ __('Limpar filtros') }}</flux:button>
                 </div>
             @endforelse
         </div>
@@ -418,7 +454,6 @@ new #[Title('Chaves do SPED')] class extends Component {
         <form wire:submit="consultar" class="space-y-6">
             <div>
                 <flux:heading size="lg" level="2">{{ trans_choice('Consulta completa de :count NF-e|Consulta completa de :count NF-e', count($selecionados), ['count' => count($selecionados)]) }}</flux:heading>
-                <flux:text class="mt-2">{{ __('Cada chave consultada é cobrada (R$ 0,03 por chave). Custo estimado: :v.', ['v' => Fmt::money($custo)]) }}</flux:text>
                 <flux:text class="mt-2">{{ __('A busca começa agora, uma chave por vez; a situação na lista atualiza sozinha.') }}</flux:text>
             </div>
 
