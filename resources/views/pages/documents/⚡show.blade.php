@@ -158,7 +158,7 @@ new #[Title('Nota fiscal')] class extends Component {
                 <flux:button size="sm" icon="document-text" :href="route('documents.danfe', $document)" target="_blank">{{ $cte ? __('DACTE') : __('DANFE') }}</flux:button>
             @endif
             @if ($document->xml_reconstruido)
-                <flux:tooltip :content="__('Nota antiga obtida no Meu Danfe: os dados estão completos, mas o XML foi remontado e não tem a assinatura digital do emitente.')">
+                <flux:tooltip :content="__('Nota antiga obtida pela consulta completa: os dados estão completos, mas o XML foi remontado e não tem a assinatura digital do emitente.')">
                     <flux:badge color="amber">{{ __('XML reconstruído') }}</flux:badge>
                 </flux:tooltip>
             @endif

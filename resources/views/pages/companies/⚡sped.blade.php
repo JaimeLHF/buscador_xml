@@ -22,7 +22,7 @@ new #[Title('Chaves do SPED')] class extends Component {
     use WithFileUploads;
     use WithPagination;
 
-    /** Teto de uma consulta em lote no Meu Danfe (cada chave é cobrada). */
+    /** Teto de uma consulta completa em lote (cada chave é cobrada). */
     public const LOTE_MAXIMO = 1000;
 
     public const PRECO_POR_CHAVE = 0.03;
@@ -124,6 +124,47 @@ new #[Title('Chaves do SPED')] class extends Component {
         return $this->filtradas()->whereIn('status', self::statusSelecionaveis())->count();
     }
 
+    /** @return list<int> */
+    #[Computed]
+    public function selecionaveisNaPagina(): array
+    {
+        return $this->chaves->getCollection()->filter(fn (ChaveHistorica $c) => $c->status->selecionavel())->pluck('id')->all();
+    }
+
+    /**
+     * Quantidade e valor de cada dia da página, contando o dia inteiro dentro dos filtros (não só o que coube na página).
+     *
+     * @return array<string, array{n: int, total: string|null}>
+     */
+    #[Computed]
+    public function resumoDias(): array
+    {
+        $dias = $this->chaves->getCollection()->map(fn (ChaveHistorica $c) => $c->sped_data?->toDateString())->filter()->unique()->values()->all();
+
+        return $this->filtradas()->toBase()->whereIn('sped_data', $dias)->groupBy('sped_data')
+            ->selectRaw('sped_data, count(*) as n, sum(sped_valor) as total')->get()
+            ->mapWithKeys(fn ($r) => [substr((string) $r->sped_data, 0, 10) => ['n' => (int) $r->n, 'total' => $r->total]])->all();
+    }
+
+    /** Nota já gravada de cada chave encontrada na página, para abrir direto. @return array<string, int> */
+    #[Computed]
+    public function notas(): array
+    {
+        return $this->company->documents()->toBase()->where('tem_xml_completo', true)
+            ->whereIn('chave', $this->chaves->getCollection()->pluck('chave')->all())->pluck('id', 'chave')->all();
+    }
+
+    /** Marca as selecionáveis da página; se já estavam todas marcadas, desmarca. */
+    public function alternarPagina(): void
+    {
+        $pagina = $this->selecionaveisNaPagina;
+        $marcadas = array_map('intval', $this->selecionados);
+
+        $this->selecionados = array_diff($pagina, $marcadas) === []
+            ? array_values(array_diff($marcadas, $pagina))
+            : array_slice(array_values(array_unique([...$marcadas, ...$pagina])), 0, self::LOTE_MAXIMO);
+    }
+
     public function marcarFiltradas(): void
     {
         $this->selecionados = $this->filtradas()->whereIn('status', self::statusSelecionaveis())
@@ -140,7 +181,7 @@ new #[Title('Chaves do SPED')] class extends Component {
         Gate::authorize('update', $this->company);
 
         if (! MeuDanfeClient::configurado()) {
-            Flux::toast(variant: 'danger', text: __('A integração com o Meu Danfe não está configurada.'));
+            Flux::toast(variant: 'danger', text: __('A consulta completa de NF-e não está configurada.'));
 
             return;
         }
@@ -150,16 +191,16 @@ new #[Title('Chaves do SPED')] class extends Component {
         $n = SpedChaves::enfileirar($this->company, $ids);
 
         if ($n > 0) {
-            Audit::record(AuditAcao::ConsultaMeuDanfe, $this->company->organization_id, descricao: $this->company->razao_social, dados: ['chaves' => $n]);
+            Audit::record(AuditAcao::ConsultaNfeCompleta, $this->company->organization_id, descricao: $this->company->razao_social, dados: ['chaves' => $n]);
         }
 
         $this->selecionados = [];
         unset($this->chaves, $this->contagem, $this->selecionaveisFiltradas);
-        Flux::modal('consultar-meudanfe')->close();
+        Flux::modal('consultar-nfe')->close();
 
         $n === 0
             ? Flux::toast(variant: 'warning', text: __('Nenhuma das chaves marcadas pode ser consultada.'))
-            : Flux::toast(variant: 'success', text: trans_choice(':n chave foi para a consulta no Meu Danfe.|:n chaves foram para a consulta no Meu Danfe.', $n, ['n' => $n]));
+            : Flux::toast(variant: 'success', text: trans_choice(':n chave foi para a consulta completa.|:n chaves foram para a consulta completa.', $n, ['n' => $n]));
     }
 
     /** @return list<string> */
@@ -179,7 +220,7 @@ new #[Title('Chaves do SPED')] class extends Component {
         <div>
             <flux:link :href="route('companies.show', $company)" wire:navigate class="text-sm">← {{ $company->nome_fantasia ?: $company->razao_social }}</flux:link>
             <flux:heading size="xl" level="1" class="mt-1">{{ __('Chaves do SPED') }}</flux:heading>
-            <flux:text class="mt-1 max-w-2xl">{{ __('Envie os TXT do SPED EFD ICMS/IPI baixados do ReceitanetBX. As notas de entrada aparecem aqui; marque as que quer buscar no Meu Danfe (R$ 0,03 por chave) e consulte em lote.') }}</flux:text>
+            <flux:text class="mt-1 max-w-2xl">{{ __('Envie os TXT do SPED EFD ICMS/IPI baixados do ReceitanetBX. As notas de entrada aparecem aqui; marque as que quer baixar completas (R$ 0,03 por chave) e consulte em lote.') }}</flux:text>
         </div>
     </div>
 
@@ -202,103 +243,182 @@ new #[Title('Chaves do SPED')] class extends Component {
     </flux:card>
 
     @if ($total > 0)
-        {{-- Resumo: clicar num status filtra a lista. --}}
-        <div class="flex flex-wrap gap-2" role="group" aria-label="{{ __('Filtrar por situação') }}">
-            <flux:button size="sm" :variant="$status === '' ? 'primary' : 'outline'" wire:click="$set('status', '')">{{ __('Todas') }} · {{ number_format($total, 0, ',', '.') }}</flux:button>
-            @foreach (ChaveHistoricaStatus::cases() as $st)
-                @if ($n = $this->contagem[$st->value] ?? 0)
-                    <flux:button size="sm" :variant="$status === $st->value ? 'primary' : 'outline'" wire:click="$set('status', '{{ $st->value }}')">
-                        <span class="inline-block size-2 rounded-full {{ match ($st->cor()) { 'amber' => 'bg-amber-500', 'blue' => 'bg-blue-500', 'green' => 'bg-green-500', 'red' => 'bg-red-500', default => 'bg-zinc-400' } }}" aria-hidden="true"></span>
-                        {{ $st->label() }} · {{ number_format($n, 0, ',', '.') }}
-                    </flux:button>
-                @endif
-            @endforeach
-        </div>
+        @php
+            // Ponto e texto por situação, no mesmo tom da lista de notas: cor só onde há informação.
+            $tom = fn (ChaveHistoricaStatus $st) => match ($st->cor()) {
+                // Aguardando seleção é o estado comum da lista: só o ponto leva cor, o texto fica neutro.
+                'amber' => ['bg-amber-500', 'text-zinc-600 dark:text-zinc-300'],
+                'blue' => ['bg-sky-500', 'text-sky-700 dark:text-sky-400'],
+                'green' => ['bg-emerald-500', 'text-emerald-700 dark:text-emerald-400'],
+                'red' => ['bg-red-500', 'text-red-700 dark:text-red-400'],
+                default => ['bg-zinc-400', 'text-zinc-500 dark:text-zinc-400'],
+            };
+            $pagina = $this->selecionaveisNaPagina;
+            $marcadas = array_map('intval', $selecionados);
+            $paginaToda = $pagina !== [] && array_diff($pagina, $marcadas) === [];
+            $grade = 'grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 md:grid-cols-[2.75rem_minmax(0,1fr)_7rem_9rem_11rem] md:gap-x-6';
+        @endphp
 
-        <div class="flex flex-wrap items-end gap-3">
-            <flux:input wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Chave ou CNPJ do fornecedor')" class="max-w-xs" clearable :aria-label="__('Buscar chave')" />
-            <flux:select wire:model.live="mes" class="w-44" :aria-label="__('Mês do SPED')">
-                <flux:select.option value="">{{ __('Todos os meses') }}</flux:select.option>
-                @foreach ($this->meses as $m)
-                    <flux:select.option :value="$m">{{ Carbon\CarbonImmutable::parse($m.'-01')->locale('pt_BR')->translatedFormat('M/Y') }}</flux:select.option>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex flex-wrap gap-1.5" role="group" aria-label="{{ __('Filtrar por situação') }}">
+                <flux:button size="sm" :variant="$status === '' ? 'primary' : 'ghost'" wire:click="$set('status', '')">
+                    {{ __('Todas') }} <span class="tabular-nums opacity-70">{{ number_format($total, 0, ',', '.') }}</span>
+                </flux:button>
+                @foreach (ChaveHistoricaStatus::cases() as $st)
+                    @if ($n = $this->contagem[$st->value] ?? 0)
+                        <flux:button size="sm" :variant="$status === $st->value ? 'primary' : 'ghost'" wire:click="$set('status', '{{ $st->value }}')" :aria-pressed="$status === $st->value ? 'true' : 'false'">
+                            <span class="size-2 shrink-0 rounded-full {{ $tom($st)[0] }}" aria-hidden="true"></span>
+                            {{ $st->label() }} <span class="tabular-nums opacity-70">{{ number_format($n, 0, ',', '.') }}</span>
+                        </flux:button>
+                    @endif
                 @endforeach
-            </flux:select>
-        </div>
+            </div>
 
-        @if ($this->selecionaveisFiltradas > 0 || $selecionados)
-            <div class="flex flex-wrap items-center justify-between gap-3 border border-zinc-200 bg-zinc-50 px-4 py-2.5 dark:border-zinc-700 dark:bg-zinc-800/50">
-                <flux:text>
-                    {{ trans_choice(':count chave marcada|:count chaves marcadas', count($selecionados), ['count' => count($selecionados)]) }}
-                    @if ($selecionados)
-                        · {{ __('custo estimado :v', ['v' => Fmt::money($custo)]) }}
-                    @endif
-                </flux:text>
-                <div class="flex flex-wrap gap-2">
-                    @if ($selecionados)
-                        <flux:button size="sm" variant="ghost" wire:click="desmarcar">{{ __('Desmarcar') }}</flux:button>
-                        <flux:modal.trigger name="consultar-meudanfe">
-                            <flux:button size="sm" variant="primary" icon="magnifying-glass-circle">{{ __('Consultar no Meu Danfe') }}</flux:button>
-                        </flux:modal.trigger>
-                    @else
-                        <flux:button size="sm" variant="ghost" wire:click="marcarFiltradas">{{ __('Marcar todas as filtradas (:n)', ['n' => number_format(min($this->selecionaveisFiltradas, $this::LOTE_MAXIMO), 0, ',', '.')]) }}</flux:button>
-                    @endif
+            <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                <div class="min-w-0 flex-1 sm:w-60 sm:flex-none">
+                    <flux:input size="sm" wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Chave ou CNPJ')" clearable :aria-label="__('Buscar chave ou CNPJ do fornecedor')" />
+                </div>
+                <div class="w-40 shrink-0">
+                <flux:select size="sm" wire:model.live="mes" :aria-label="__('Mês do SPED')">
+                    <flux:select.option value="">{{ __('Todos os meses') }}</flux:select.option>
+                    @foreach ($this->meses as $m)
+                        <flux:select.option :value="$m">{{ ucfirst(Carbon\CarbonImmutable::parse($m.'-01')->locale('pt_BR')->translatedFormat('M/Y')) }}</flux:select.option>
+                    @endforeach
+                </flux:select>
                 </div>
             </div>
-        @endif
+        </div>
 
         <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="status,mes,q,gotoPage,nextPage,previousPage,importar">
-            <flux:table>
-                <flux:table.columns>
-                    <flux:table.column class="w-10"><span class="sr-only">{{ __('Marcar') }}</span></flux:table.column>
-                    <flux:table.column>{{ __('Fornecedor') }}</flux:table.column>
-                    <flux:table.column>{{ __('Nº') }}</flux:table.column>
-                    <flux:table.column>{{ __('Emissão (SPED)') }}</flux:table.column>
-                    <flux:table.column align="end">{{ __('Valor (SPED)') }}</flux:table.column>
-                    <flux:table.column>{{ __('Situação') }}</flux:table.column>
-                </flux:table.columns>
-                <flux:table.rows>
-                    @forelse ($this->chaves as $c)
-                        @php
-                            $cnpj = substr($c->chave, 6, 14);
-                            $numero = ltrim(substr($c->chave, 25, 9), '0');
-                        @endphp
-                        <flux:table.row :key="'chave-'.$c->id">
-                            <flux:table.cell>
-                                @if ($c->status->selecionavel())
-                                    <input type="checkbox" wire:model.live="selecionados" value="{{ $c->id }}" aria-label="{{ __('Marcar a nota :n', ['n' => $numero]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
-                                @endif
-                            </flux:table.cell>
-                            <flux:table.cell>
-                                <div class="font-medium">{{ $this->fornecedores[$cnpj] ?? Fmt::cnpj($cnpj) }}</div>
-                                <div class="font-mono text-xs text-zinc-500 dark:text-zinc-400" title="{{ __('Chave de acesso') }}">{{ trim(chunk_split($c->chave, 4, ' ')) }}</div>
-                            </flux:table.cell>
-                            <flux:table.cell class="tabular-nums">{{ $numero }}</flux:table.cell>
-                            <flux:table.cell class="tabular-nums">{{ $c->sped_data?->format('d/m/Y') ?? '—' }}</flux:table.cell>
-                            <flux:table.cell align="end" class="tabular-nums">{{ $c->sped_valor !== null ? Fmt::money($c->sped_valor) : '—' }}</flux:table.cell>
-                            <flux:table.cell>
-                                <flux:badge size="sm" :color="$c->status->cor()">{{ $c->status->label() }}</flux:badge>
-                                @if ($c->ultimo_erro && $c->status !== ChaveHistoricaStatus::Encontrada)
-                                    <div class="mt-1 max-w-56 truncate text-xs text-zinc-500 dark:text-zinc-400" title="{{ $c->ultimo_erro }}">{{ $c->ultimo_erro }}</div>
-                                @endif
-                            </flux:table.cell>
-                        </flux:table.row>
-                    @empty
-                        <flux:table.row>
-                            <flux:table.cell colspan="6" class="py-8 text-center text-zinc-500">{{ __('Nenhuma chave com esses filtros.') }}</flux:table.cell>
-                        </flux:table.row>
-                    @endforelse
-                </flux:table.rows>
-            </flux:table>
+            {{-- Barra de seleção: fica presa no topo enquanto há chaves marcadas, com o custo antes de consultar. --}}
+            @if ($this->selecionaveisFiltradas > 0 || $selecionados)
+                <div @class([
+                    'sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-2',
+                    'border-zinc-800 bg-zinc-900 text-white dark:border-white/20 dark:bg-zinc-100 dark:text-zinc-900' => $selecionados,
+                    'border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/60' => ! $selecionados,
+                ])>
+                    @if ($selecionados)
+                        <p class="text-sm">
+                            <span class="font-semibold tabular-nums">{{ trans_choice(':count chave marcada|:count chaves marcadas', count($selecionados), ['count' => number_format(count($selecionados), 0, ',', '.')]) }}</span>
+                            <span class="opacity-70">· {{ __('custo estimado :v', ['v' => Fmt::money($custo)]) }}</span>
+                        </p>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button type="button" wire:click="desmarcar" class="rounded px-2.5 py-1 text-sm opacity-80 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2">{{ __('Desmarcar') }}</button>
+                            <flux:modal.trigger name="consultar-nfe">
+                                <button type="button" class="inline-flex items-center gap-1.5 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-zinc-900 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-offset-2 dark:bg-zinc-900 dark:text-white dark:hover:bg-zinc-800">
+                                    <flux:icon.magnifying-glass-circle variant="micro" />{{ __('Consultar NF-e completa') }}
+                                </button>
+                            </flux:modal.trigger>
+                        </div>
+                    @else
+                        <flux:text size="sm">{{ __('Marque as chaves para consultar a NF-e completa. Clique em qualquer ponto da linha.') }}</flux:text>
+                        <flux:button size="sm" variant="subtle" wire:click="marcarFiltradas">{{ __('Marcar todas as filtradas (:n)', ['n' => number_format(min($this->selecionaveisFiltradas, $this::LOTE_MAXIMO), 0, ',', '.')]) }}</flux:button>
+                    @endif
+                </div>
+            @endif
+
+            <div class="{{ $grade }} border-b border-zinc-200 py-2 pe-4 text-xs font-medium tracking-wide text-zinc-500 uppercase dark:border-zinc-700 dark:text-zinc-400">
+                <span class="flex justify-center">
+                    @if ($pagina)
+                        <input type="checkbox" wire:click="alternarPagina" @checked($paginaToda) aria-label="{{ $paginaToda ? __('Desmarcar as chaves desta página') : __('Marcar as chaves desta página') }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
+                    @endif
+                </span>
+                <span>{{ __('Fornecedor') }}</span>
+                <span class="max-md:hidden">{{ __('Nota') }}</span>
+                <span class="text-end">{{ __('Valor no SPED') }}</span>
+                <span class="max-md:hidden">{{ __('Situação') }}</span>
+            </div>
+
+            @forelse ($this->chaves->getCollection()->groupBy(fn ($c) => $c->sped_data?->toDateString() ?? '') as $dia => $doDia)
+                @php
+                    $resumo = $this->resumoDias[$dia] ?? null;
+                    $rotulo = $dia ? ucfirst(Carbon\CarbonImmutable::parse($dia)->locale('pt_BR')->translatedFormat('l, d/m/Y')) : __('Sem data no SPED');
+                @endphp
+                <section wire:key="dia-{{ $dia ?: 'sem' }}" aria-label="{{ $rotulo }}">
+                    <div class="flex items-baseline justify-between gap-4 border-b border-zinc-200 bg-zinc-50 px-4 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                        <span class="font-semibold text-zinc-700 dark:text-zinc-200">{{ $rotulo }}</span>
+                        @if ($resumo)
+                            <span class="tabular-nums text-zinc-500 dark:text-zinc-400">
+                                {{ trans_choice(':n nota|:n notas', $resumo['n'], ['n' => $resumo['n']]) }} · {{ Fmt::money($resumo['total']) }}
+                            </span>
+                        @endif
+                    </div>
+
+                    <ul role="list" class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        @foreach ($doDia as $c)
+                            @php
+                                $cnpj = substr($c->chave, 6, 14);
+                                $numero = ltrim(substr($c->chave, 25, 9), '0') ?: '0';
+                                $serie = ltrim(substr($c->chave, 22, 3), '0') ?: '0';
+                                $nome = $this->fornecedores[$cnpj] ?? null;
+                                $marcavel = $c->status->selecionavel();
+                                [$ponto, $cor] = $tom($c->status);
+                                $notaId = $this->notas[$c->chave] ?? null;
+                            @endphp
+                            <li wire:key="chave-{{ $c->id }}">
+                                <{{ $marcavel ? 'label' : 'div' }} @class([
+                                    $grade, 'py-2.5 pe-4 transition-colors',
+                                    'cursor-pointer hover:bg-zinc-50 dark:hover:bg-white/[0.03] has-[:checked]:bg-zinc-100 dark:has-[:checked]:bg-white/[0.07]' => $marcavel,
+                                ])>
+                                    <span class="flex justify-center">
+                                        @if ($marcavel)
+                                            <input type="checkbox" wire:model.live="selecionados" value="{{ $c->id }}" aria-label="{{ __('Marcar a nota :n de :f', ['n' => $numero, 'f' => $nome ?? Fmt::cnpj($cnpj)]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
+                                        @endif
+                                    </span>
+
+                                    <div class="min-w-0">
+                                        <p class="truncate font-medium text-zinc-900 dark:text-white">{{ $nome ?? Fmt::cnpj($cnpj) }}</p>
+                                        <p class="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                                            @if ($nome)
+                                                <span class="tabular-nums">{{ Fmt::cnpj($cnpj) }}</span> ·
+                                            @endif
+                                            <span class="font-mono tracking-tight" title="{{ __('Chave de acesso') }}">{{ trim(chunk_split($c->chave, 4, ' ')) }}</span>
+                                        </p>
+                                        <p class="mt-0.5 flex items-center gap-1.5 text-xs md:hidden {{ $cor }}">
+                                            <span class="size-1.5 shrink-0 rounded-full {{ $ponto }}" aria-hidden="true"></span>{{ $c->status->label() }} · {{ __('nº :n', ['n' => $numero]) }}
+                                        </p>
+                                    </div>
+
+                                    <span class="text-sm tabular-nums text-zinc-700 max-md:hidden dark:text-zinc-300">
+                                        {{ $numero }}<span class="text-zinc-400 dark:text-zinc-500"> / {{ $serie }}</span>
+                                    </span>
+
+                                    <span class="text-end text-sm font-medium tabular-nums text-zinc-900 dark:text-white">{{ $c->sped_valor !== null ? Fmt::money($c->sped_valor) : '—' }}</span>
+
+                                    <div class="min-w-0 max-md:hidden">
+                                        <p class="flex items-center gap-2 text-sm {{ $cor }}">
+                                            <span @class(['size-2 shrink-0 rounded-full', $ponto, 'animate-pulse' => $c->status === ChaveHistoricaStatus::Pendente]) aria-hidden="true"></span>
+                                            @if ($notaId)
+                                                <a href="{{ route('documents.show', $notaId) }}" wire:navigate class="underline decoration-current/30 underline-offset-4 hover:decoration-current">{{ $c->status->label() }}</a>
+                                            @else
+                                                {{ $c->status->label() }}
+                                            @endif
+                                        </p>
+                                        @if ($c->ultimo_erro && ! in_array($c->status, [ChaveHistoricaStatus::Encontrada, ChaveHistoricaStatus::Importada], true))
+                                            <p class="mt-0.5 truncate ps-4 text-xs text-zinc-500 dark:text-zinc-400" title="{{ $c->ultimo_erro }}">{{ $c->ultimo_erro }}</p>
+                                        @endif
+                                    </div>
+                                </{{ $marcavel ? 'label' : 'div' }}>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @empty
+                <div class="px-4 py-12 text-center">
+                    <flux:heading>{{ __('Nenhuma chave com esses filtros.') }}</flux:heading>
+                    <flux:button size="sm" variant="ghost" class="mt-2" wire:click="$set('status', ''); $set('mes', ''); $set('q', '')">{{ __('Limpar filtros') }}</flux:button>
+                </div>
+            @endforelse
         </div>
 
         <flux:pagination :paginator="$this->chaves" />
     @endif
 
-    <flux:modal name="consultar-meudanfe" class="md:w-[32rem]">
+    <flux:modal name="consultar-nfe" class="md:w-[32rem]">
         <form wire:submit="consultar" class="space-y-6">
             <div>
-                <flux:heading size="lg" level="2">{{ trans_choice('Consultar :count chave no Meu Danfe|Consultar :count chaves no Meu Danfe', count($selecionados), ['count' => count($selecionados)]) }}</flux:heading>
-                <flux:text class="mt-2">{{ __('O Meu Danfe cobra cada consulta (R$ 0,03 por chave). Custo estimado: :v.', ['v' => Fmt::money($custo)]) }}</flux:text>
+                <flux:heading size="lg" level="2">{{ trans_choice('Consulta completa de :count NF-e|Consulta completa de :count NF-e', count($selecionados), ['count' => count($selecionados)]) }}</flux:heading>
+                <flux:text class="mt-2">{{ __('Cada chave consultada é cobrada (R$ 0,03 por chave). Custo estimado: :v.', ['v' => Fmt::money($custo)]) }}</flux:text>
                 <flux:text class="mt-2">{{ __('A busca começa agora, uma chave por vez; a situação na lista atualiza sozinha.') }}</flux:text>
             </div>
 

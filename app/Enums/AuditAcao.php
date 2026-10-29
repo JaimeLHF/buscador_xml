@@ -14,7 +14,7 @@ enum AuditAcao: string
     case TokenCriado = 'token_criado';
     case TokenRevogado = 'token_revogado';
     case WebhookAlterado = 'webhook_alterado';
-    case ConsultaMeuDanfe = 'consulta_meudanfe';
+    case ConsultaNfeCompleta = 'consulta_nfe_completa';
 
     public function label(): string
     {
@@ -29,7 +29,7 @@ enum AuditAcao: string
             self::TokenCriado => 'Criou chave de API',
             self::TokenRevogado => 'Revogou chave de API',
             self::WebhookAlterado => 'Alterou o webhook',
-            self::ConsultaMeuDanfe => 'Pediu consulta no Meu Danfe',
+            self::ConsultaNfeCompleta => 'Pediu consulta completa de NF-e',
         };
     }
 }

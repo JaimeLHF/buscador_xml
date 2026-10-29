@@ -126,3 +126,15 @@ it('hands the hourly run to the single fetch job only when there is a queue', fu
     $this->artisan('historico:buscar')->assertSuccessful();
     Queue::assertPushed(BuscarChavesHistoricas::class, 1);
 });
+
+it('never shows the name of the lookup provider to the user', function () {
+    $this->company->chavesHistoricas()->create(['chave' => chaveApi(1), 'status' => 'importada']);
+    Http::fake(['*' => Http::response('falhou', 500)]);
+
+    Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
+        ->set('selecionados', [$this->company->chavesHistoricas()->sole()->id])
+        ->call('consultar')
+        ->assertSee('Falha na consulta (HTTP 500).')
+        ->assertDontSee('Meu Danfe')
+        ->assertDontSee('meudanfe');
+});

@@ -258,7 +258,7 @@ new #[Title('Empresa')] class extends Component {
         <flux:card class="space-y-4">
             <div>
                 <flux:heading size="lg" level="2">{{ __('Notas antigas (SPED)') }}</flux:heading>
-                <flux:text>{{ __('A SEFAZ só entrega o XML das notas dos últimos 3 meses. Envie os arquivos SPED EFD ICMS/IPI, veja as chaves de entrada e escolha quais buscar no Meu Danfe (R$ 0,03 por nota).') }}</flux:text>
+                <flux:text>{{ __('A SEFAZ só entrega o XML das notas dos últimos 3 meses. Envie os arquivos SPED EFD ICMS/IPI, veja as chaves de entrada e escolha quais consultar completas (R$ 0,03 por nota).') }}</flux:text>
             </div>
 
             @if ($this->historico)

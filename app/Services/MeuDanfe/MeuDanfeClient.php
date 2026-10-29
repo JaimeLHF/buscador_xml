@@ -23,13 +23,13 @@ class MeuDanfeClient
         $response = $this->http()->put("fd/add/{$chave}");
 
         if ($response->status() === 402) {
-            throw new SemSaldoException('Sem saldo no Meu Danfe.');
+            throw new SemSaldoException('Sem saldo para a consulta completa.');
         }
 
         $status = $response->throw()->json('status');
 
         if (! in_array($status, ['OK', 'NOT_FOUND', 'ERROR', 'WAITING', 'SEARCHING'], true)) {
-            throw new RuntimeException('Resposta do Meu Danfe sem status reconhecível.');
+            throw new RuntimeException('Resposta da consulta sem status reconhecível.');
         }
 
         return $status;

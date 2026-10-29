@@ -10,6 +10,8 @@ use App\Services\Sefaz\DocZip;
 use Carbon\CarbonImmutable;
 use DOMDocument;
 use DOMElement;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
@@ -56,7 +58,7 @@ class BuscaHistoricaService
 
                 break;
             } catch (Throwable $e) {
-                $this->falhou($item, $e->getMessage());
+                $this->falhou($item, self::motivo($e));
                 $resultado['erros']++;
 
                 continue;
@@ -68,7 +70,7 @@ class BuscaHistoricaService
                 $this->finalizar($item, ChaveHistoricaStatus::NaoEncontrada);
                 $resultado['nao_encontradas']++;
             } else {
-                $this->falhou($item, "Meu Danfe retornou {$status}.");
+                $this->falhou($item, "A consulta retornou {$status}.");
                 $resultado['erros']++;
             }
         }
@@ -109,7 +111,7 @@ class BuscaHistoricaService
 
             return true;
         } catch (Throwable $e) {
-            $this->falhou($item, $e->getMessage());
+            $this->falhou($item, self::motivo($e));
 
             return false;
         }
@@ -134,6 +136,23 @@ class BuscaHistoricaService
     private function finalizar(ChaveHistorica $item, ChaveHistoricaStatus $status): void
     {
         $item->update(['status' => $status, 'ultimo_erro' => null, 'buscado_em' => now()]);
+    }
+
+    /**
+     * O motivo aparece na tela de chaves: erro de HTTP vira uma frase neutra (a mensagem original traz a URL do
+     * fornecedor da consulta) e o detalhe fica no log.
+     */
+    private static function motivo(Throwable $e): string
+    {
+        if ($e instanceof RequestException || $e instanceof ConnectionException) {
+            Log::warning('Falha na consulta completa de NF-e', ['erro' => $e->getMessage()]);
+
+            return $e instanceof RequestException
+                ? "Falha na consulta (HTTP {$e->response->status()})."
+                : 'Serviço de consulta fora do ar.';
+        }
+
+        return $e->getMessage();
     }
 
     private function falhou(ChaveHistorica $item, string $erro): void
