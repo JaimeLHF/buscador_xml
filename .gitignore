@@ -38,3 +38,5 @@ yarn-error.log
 .playwright-mcp/
 /prints
 /buscador_xml
+# SPED baixado do ReceitanetBX: dado fiscal de cliente, nunca vai para o repositorio
+/Arquivos ReceitanetBX/
