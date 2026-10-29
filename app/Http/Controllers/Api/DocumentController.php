@@ -112,6 +112,7 @@ class DocumentController extends Controller
             'situacao' => $d->situacao->value,
             'manifestacao' => $d->manifestacao_status?->value,
             'xml_completo' => $d->tem_xml_completo,
+            'xml_reconstruido' => $d->xml_reconstruido,
             'atualizado_em' => $d->updated_at?->toIso8601String(),
         ];
     }

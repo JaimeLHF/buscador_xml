@@ -34,11 +34,6 @@ function sped(): string
     ]);
 }
 
-function xmlAssinado(): string
-{
-    return str_replace('</NFe>', '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/></NFe>', F::file('procNFe.xml'));
-}
-
 it('queues only third-party NF-e entries from the SPED, once', function () {
     expect(SpedChaves::extrair(sped()))->toBe([CHAVE_HIST]);
 
@@ -57,24 +52,24 @@ it('polls Meu Danfe until OK and stores the full document', function () {
 
     Http::fake([
         MEUDANFE.'fd/add/*' => Http::sequence()->push(['status' => 'SEARCHING'])->push(['status' => 'OK']),
-        MEUDANFE.'fd/get/xml/*' => Http::response(['format' => 'BASE64', 'data' => base64_encode(xmlAssinado())]),
+        MEUDANFE.'fd/get/xml/*' => Http::response(['format' => 'XML', 'data' => F::file('procNFe.xml')]),
     ]);
 
     $r = app(BuscaHistoricaService::class)->buscar(10);
 
     expect($r['encontradas'])->toBe(1)
-        ->and($this->company->documents()->sole()->tem_xml_completo)->toBeTrue()
+        ->and($this->company->documents()->sole())->tem_xml_completo->toBeTrue()->xml_reconstruido->toBeTrue()
         ->and($this->company->chavesHistoricas()->sole()->status)->toBe(ChaveHistoricaStatus::Encontrada);
 
     Http::assertSent(fn ($req) => $req->hasHeader('Api-Key', 'teste'));
 });
 
-it('rejects an XML without signature', function () {
+it('rejects an XML without authorization protocol', function () {
     SpedChaves::importar($this->company, sped());
 
     Http::fake([
         MEUDANFE.'fd/add/*' => Http::response(['status' => 'OK']),
-        MEUDANFE.'fd/get/xml/*' => Http::response(['format' => 'TEXT', 'data' => F::file('procNFe.xml')]),
+        MEUDANFE.'fd/get/xml/*' => Http::response(['format' => 'BASE64', 'data' => base64_encode(preg_replace('#<protNFe.*</protNFe>#s', '', F::file('procNFe.xml')))]),
     ]);
 
     app(BuscaHistoricaService::class)->buscar(10);

@@ -88,6 +88,7 @@ class BuscaHistoricaService
             DB::transaction(function () use ($item, $xml): void {
                 // NSU zerado: a nota não veio da distribuição, como na consulta por chave (consChNFe).
                 $this->processor->process($item->company, new DocZip('000000000000000', 'procNFe', DfeSchema::ProcNFe, $xml));
+                $item->company->documents()->where('chave', $item->chave)->update(['xml_reconstruido' => true]);
                 $this->finalizar($item, ChaveHistoricaStatus::Encontrada);
             });
 
@@ -99,13 +100,13 @@ class BuscaHistoricaService
         }
     }
 
-    /** Só aceita o XML completo (com assinatura) da própria chave pedida. */
+    /** O Meu Danfe remonta o XML sem a assinatura do emitente: exige ao menos a chave pedida e o protocolo de autorização. */
     private function validar(string $chave, string $xml): void
     {
         $dom = new DOMDocument;
 
-        if (! @$dom->loadXML($xml, LIBXML_NONET) || $dom->getElementsByTagName('Signature')->length === 0) {
-            throw new RuntimeException('XML recebido sem assinatura ou inválido.');
+        if (! @$dom->loadXML($xml, LIBXML_NONET) || $dom->getElementsByTagName('infProt')->length === 0) {
+            throw new RuntimeException('XML recebido sem protocolo de autorização ou inválido.');
         }
 
         $infNFe = $dom->getElementsByTagName('infNFe')->item(0);

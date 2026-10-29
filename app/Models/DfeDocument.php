@@ -26,11 +26,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property string|null $valor_total
  * @property Situacao $situacao
  * @property bool $tem_xml_completo
+ * @property bool $xml_reconstruido
  * @property ManifestacaoStatus|null $manifestacao_status
  * @property string|null $xml_path
  * @property string|null $resumo_xml_path
  */
-#[Fillable(['tipo', 'chave', 'nsu', 'schema', 'emitente_cnpj', 'emitente_nome', 'data_emissao', 'valor_total', 'situacao', 'tem_xml_completo', 'manifestacao_status', 'xml_path', 'resumo_xml_path'])]
+#[Fillable(['tipo', 'chave', 'nsu', 'schema', 'emitente_cnpj', 'emitente_nome', 'data_emissao', 'valor_total', 'situacao', 'tem_xml_completo', 'xml_reconstruido', 'manifestacao_status', 'xml_path', 'resumo_xml_path'])]
 class DfeDocument extends Model
 {
     protected function casts(): array
@@ -43,6 +44,7 @@ class DfeDocument extends Model
             'data_emissao' => 'datetime',
             'valor_total' => 'decimal:2',
             'tem_xml_completo' => 'boolean',
+            'xml_reconstruido' => 'boolean',
         ];
     }
 

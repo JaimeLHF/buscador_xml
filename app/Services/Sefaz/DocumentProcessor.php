@@ -138,6 +138,8 @@ class DocumentProcessor
             'valor_total' => $total ? $this->text($total, 'vNF') : null,
             'situacao' => $this->situacao($company, $chave, Situacao::fromProtocolo($protocolo ? (string) $this->text($protocolo, 'cStat') : '100')),
             'tem_xml_completo' => true,
+            // O XML da SEFAZ substitui o remontado do Meu Danfe, se houver.
+            'xml_reconstruido' => false,
             'xml_path' => $this->storage->putDocument($company, DocumentoTipo::Nfe->value, $chave, DfeSchema::ProcNFe->value, $doc->xml),
         ])->save();
 
