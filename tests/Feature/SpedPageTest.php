@@ -227,3 +227,32 @@ it('finds a supplier by name and selects only its notes', function () {
     expect($this->company->chavesHistoricas()->where('status', 'pendente')->count())->toBe(2)
         ->and($outra->refresh()->status)->toBe(ChaveHistoricaStatus::Importada);
 });
+
+it('groups the keys by supplier, opens one and marks only its notes to look up', function () {
+    Queue::fake();
+    $eucatex = '56643018000166';
+    $daEucatex = fn ($n) => '422510'.$eucatex.'55001'.str_pad((string) $n, 9, '0', STR_PAD_LEFT).'1123456780';
+    $a = $this->company->chavesHistoricas()->create(['chave' => $daEucatex(1), 'status' => 'importada', 'fornecedor_nome' => 'EUCATEX S/A', 'sped_valor' => '100.00']);
+    $b = $this->company->chavesHistoricas()->create(['chave' => $daEucatex(2), 'status' => 'erro', 'fornecedor_nome' => 'EUCATEX S/A', 'sped_valor' => '50.00']);
+    $this->company->chavesHistoricas()->create(['chave' => $daEucatex(3), 'status' => 'encontrada', 'fornecedor_nome' => 'EUCATEX S/A']);
+    $this->company->chavesHistoricas()->create(['chave' => $daEucatex(4), 'status' => 'importada', 'fornecedor_nome' => 'EUCATEX S/A', 'sped_situacao' => '02']);
+    $outra = $this->company->chavesHistoricas()->create(['chave' => chaveApi(5), 'status' => 'importada', 'fornecedor_nome' => 'OUTRO FORNECEDOR LTDA']);
+
+    $page = Livewire::actingAs($this->user)->test('pages::companies.sped', ['company' => $this->company])
+        ->set('visao', 'fornecedores')
+        ->assertSee('EUCATEX S/A')
+        ->assertSee('2 a consultar')
+        ->assertSee('1 com XML')
+        ->assertSee('Selecionar (2)')
+        ->call('alternarFornecedor', $eucatex)
+        ->assertSee('NF 1')
+        ->assertSee('Cancelada no SPED')
+        ->call('marcarFornecedor', $eucatex)
+        ->assertSee('Marcadas');
+
+    expect(array_map('intval', $page->get('selecionados')))->toEqualCanonicalizing([$a->id, $b->id]);
+
+    // Clicar de novo desmarca só as desse fornecedor.
+    $page->set('selecionados', [$a->id, $b->id, $outra->id])->call('marcarFornecedor', $eucatex);
+    expect(array_map('intval', $page->get('selecionados')))->toBe([$outra->id]);
+});

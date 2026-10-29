@@ -38,6 +38,12 @@ new #[Title('Chaves do SPED')] class extends Component {
     /** CNPJ do emitente (posições 7 a 20 da chave), escolhido ao clicar no fornecedor. */
     #[Url] public string $fornecedor = '';
 
+    /** Lista de notas ou agrupada por fornecedor. */
+    #[Url] public string $visao = 'notas';
+
+    /** CNPJs dos fornecedores abertos na visão por fornecedor. @var list<string> */
+    public array $abertos = [];
+
     /** @var list<int|string> */
     public array $selecionados = [];
 
@@ -58,6 +64,7 @@ new #[Title('Chaves do SPED')] class extends Component {
     {
         if (in_array($property, ['status', 'mes', 'q', 'natureza', 'fornecedor'], true)) {
             $this->resetPage();
+            $this->resetPage('fornecedores');
             // Mudou o filtro: "todas" já não significa as mesmas chaves.
             $this->todas = false;
         }
@@ -181,7 +188,101 @@ new #[Title('Chaves do SPED')] class extends Component {
     public function notas(): array
     {
         return $this->company->documents()->toBase()->where('tem_xml_completo', true)
-            ->whereIn('chave', $this->chaves->getCollection()->pluck('chave')->all())->pluck('id', 'chave')->all();
+            ->whereIn('chave', $this->visao === 'fornecedores'
+                ? collect($this->notasDosAbertos)->flatten()->pluck('chave')->all()
+                : $this->chaves->getCollection()->pluck('chave')->all())
+            ->pluck('id', 'chave')->all();
+    }
+
+    /**
+     * Um fornecedor por linha (pelo CNPJ do emitente na chave), dentro dos filtros da tela: quantas notas,
+     * quantas ainda podem ser consultadas, quantas já têm XML e o valor. Quem tem mais a consultar vem primeiro.
+     */
+    #[Computed]
+    public function fornecedoresAgrupados()
+    {
+        $situacoes = "'".implode("','", SpedChaves::SITUACOES_SEM_NOTA)."'";
+        $selecionaveis = "'".implode("','", self::statusSelecionaveis())."'";
+
+        return $this->filtradas()->toBase()
+            ->selectRaw('substring(chave from 7 for 14) as cnpj, max(fornecedor_nome) as nome, max(fornecedor_uf) as uf, count(*) as total, sum(sped_valor) as valor')
+            ->selectRaw("count(*) filter (where status in ({$selecionaveis}) and (sped_situacao is null or sped_situacao not in ({$situacoes}))) as a_consultar")
+            ->selectRaw("count(*) filter (where status = 'encontrada') as com_xml")
+            ->selectRaw("count(*) filter (where status = 'pendente') as na_fila")
+            ->groupByRaw('substring(chave from 7 for 14)')
+            ->orderByDesc('a_consultar')->orderByDesc('total')->orderByRaw('max(fornecedor_nome)')
+            ->paginate(30, pageName: 'fornecedores');
+    }
+
+    #[Computed]
+    public function totalFornecedores(): int
+    {
+        return (int) $this->filtradas()->toBase()->selectRaw('count(distinct substring(chave from 7 for 14)) as n')->value('n');
+    }
+
+    /** Notas dos fornecedores abertos, já nos filtros da tela. @return array<string, Illuminate\Support\Collection<int, ChaveHistorica>> */
+    #[Computed]
+    public function notasDosAbertos(): array
+    {
+        $notas = [];
+
+        foreach ($this->abertos as $cnpj) {
+            $notas[$cnpj] = $this->filtradas()->where('chave', 'like', '______'.$cnpj.'%')
+                ->orderByRaw('sped_data desc nulls last')->orderBy('id')->limit(500)->get();
+        }
+
+        return $notas;
+    }
+
+    public function alternarFornecedor(string $cnpj): void
+    {
+        if (preg_match('/^\d{14}$/', $cnpj) !== 1) {
+            return;
+        }
+
+        $this->abertos = in_array($cnpj, $this->abertos, true)
+            ? array_values(array_diff($this->abertos, [$cnpj]))
+            : [...$this->abertos, $cnpj];
+    }
+
+    /** Marca (ou desmarca, se já estavam todas) as notas a consultar deste fornecedor, somando à seleção atual. */
+    public function marcarFornecedor(string $cnpj): void
+    {
+        if (preg_match('/^\d{14}$/', $cnpj) !== 1) {
+            return;
+        }
+
+        $ids = $this->filtradas()->where('chave', 'like', '______'.$cnpj.'%')
+            ->whereIn('status', self::statusSelecionaveis())->consultaveis()->pluck('id')->all();
+        $marcadas = array_map('intval', $this->selecionados);
+        $this->todas = false;
+
+        $this->selecionados = $ids !== [] && array_diff($ids, $marcadas) === []
+            ? array_values(array_diff($marcadas, $ids))
+            : array_values(array_unique([...$marcadas, ...$ids]));
+    }
+
+    /** Quantas notas marcadas há em cada fornecedor, para o estado do botão de seleção. @return array<string, int> */
+    #[Computed]
+    public function marcadasPorFornecedor(): array
+    {
+        $ids = array_map('intval', $this->selecionados);
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $contagem = [];
+
+        foreach (array_chunk($ids, 1000) as $lote) {
+            $this->company->chavesHistoricas()->toBase()->whereIn('id', $lote)
+                ->selectRaw('substring(chave from 7 for 14) as cnpj, count(*) as n')->groupByRaw('substring(chave from 7 for 14)')
+                ->get()->each(function ($r) use (&$contagem) {
+                    $contagem[$r->cnpj] = ($contagem[$r->cnpj] ?? 0) + (int) $r->n;
+                });
+        }
+
+        return $contagem;
     }
 
     /** Mostra só as notas deste fornecedor (pelo CNPJ da chave), para marcar todas de uma vez. */
@@ -402,6 +503,21 @@ new #[Title('Chaves do SPED')] class extends Component {
             @endif
         </div>
 
+        {{-- Abas: todas as notas ou agrupadas por fornecedor --}}
+        <div class="flex gap-6 border-b border-zinc-200 dark:border-zinc-700" role="tablist" aria-label="{{ __('Como ver as chaves') }}">
+            @foreach (['notas' => [__('Todas as notas'), 'queue-list', $this->chaves->total()], 'fornecedores' => [__('Por fornecedor'), 'building-storefront', $this->totalFornecedores]] as $aba => [$rotuloAba, $iconeAba, $qtdAba])
+                <button type="button" role="tab" wire:click="$set('visao', '{{ $aba }}')" aria-selected="{{ $visao === $aba ? 'true' : 'false' }}" @class([
+                    '-mb-px inline-flex items-center gap-2 border-b-2 px-0.5 pb-2.5 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-4',
+                    'border-zinc-900 text-zinc-900 dark:border-white dark:text-white' => $visao === $aba,
+                    'border-transparent text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white' => $visao !== $aba,
+                ])>
+                    <flux:icon :name="$iconeAba" variant="micro" />
+                    {{ $rotuloAba }}
+                    <span class="bg-zinc-100 px-1.5 py-px text-xs tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{{ $fmt($qtdAba) }}</span>
+                </button>
+            @endforeach
+        </div>
+
         {{-- Filtros e seleção --}}
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex w-full flex-wrap items-center gap-2 lg:w-auto">
@@ -436,6 +552,116 @@ new #[Title('Chaves do SPED')] class extends Component {
             @endif
         </div>
 
+        @if ($visao === 'fornecedores')
+            {{-- Um fornecedor por linha; abrir mostra as notas dele para marcar. --}}
+            <div class="divide-y divide-zinc-200 border border-zinc-200 bg-white dark:divide-zinc-700 dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="status,mes,q,natureza,limparFiltros,gotoPage,nextPage,previousPage">
+                @forelse ($this->fornecedoresAgrupados as $f)
+                    @php
+                        $aberto = in_array($f->cnpj, $abertos, true);
+                        $aConsultar = (int) $f->a_consultar;
+                        $marcadasAqui = $todas ? $aConsultar : min($aConsultar, $this->marcadasPorFornecedor[$f->cnpj] ?? 0);
+                        $tudoMarcado = $aConsultar > 0 && $marcadasAqui >= $aConsultar;
+                    @endphp
+                    <section wire:key="forn-{{ $f->cnpj }}" @class(['bg-zinc-50/60 dark:bg-white/[0.02]' => $aberto])>
+                        <div class="flex items-center gap-3 px-4 py-3">
+                            <button type="button" wire:click="alternarFornecedor('{{ $f->cnpj }}')" aria-expanded="{{ $aberto ? 'true' : 'false' }}" aria-controls="notas-{{ $f->cnpj }}"
+                                class="group/forn flex min-w-0 flex-1 items-center gap-3 text-start focus-visible:outline-2 focus-visible:outline-offset-4">
+                                <flux:icon.chevron-right variant="mini" @class(['shrink-0 text-zinc-400 transition-transform duration-200 group-hover/forn:text-zinc-900 dark:group-hover/forn:text-white', 'rotate-90' => $aberto]) />
+                                <span class="min-w-0">
+                                    <span class="block truncate font-medium text-zinc-900 dark:text-white">{{ $f->nome ?? Fmt::cnpj($f->cnpj) }}</span>
+                                    <span class="mt-0.5 block truncate text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+                                        {{ Fmt::cnpj($f->cnpj) }}@if ($f->uf) · {{ $f->uf }}@endif · {{ trans_choice(':n nota|:n notas', (int) $f->total, ['n' => $fmt($f->total)]) }} · {{ Fmt::money($f->valor) }}
+                                    </span>
+                                </span>
+                            </button>
+
+                            <div class="flex shrink-0 items-center gap-2 text-xs max-sm:hidden">
+                                @if ((int) $f->com_xml > 0)
+                                    <span class="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400"><span class="size-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>{{ __(':n com XML', ['n' => $fmt($f->com_xml)]) }}</span>
+                                @endif
+                                @if ((int) $f->na_fila > 0)
+                                    <span class="inline-flex items-center gap-1.5 text-sky-700 dark:text-sky-400"><span class="size-1.5 animate-pulse rounded-full bg-sky-500" aria-hidden="true"></span>{{ __(':n na fila', ['n' => $fmt($f->na_fila)]) }}</span>
+                                @endif
+                                @if ($aConsultar > 0)
+                                    <span class="bg-amber-500/10 px-2 py-0.5 font-medium text-amber-700 dark:text-amber-400">{{ __(':n a consultar', ['n' => $fmt($aConsultar)]) }}</span>
+                                @endif
+                            </div>
+
+                            @if ($aConsultar > 0)
+                                <button type="button" wire:click="marcarFornecedor('{{ $f->cnpj }}')" @disabled($todas) @class([
+                                    'inline-flex shrink-0 items-center gap-1.5 border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed',
+                                    'border-zinc-900 bg-zinc-900 text-white dark:border-white dark:bg-white dark:text-zinc-900' => $tudoMarcado,
+                                    'border-zinc-300 text-zinc-700 hover:border-zinc-900 hover:text-zinc-900 dark:border-zinc-600 dark:text-zinc-300 dark:hover:border-white dark:hover:text-white' => ! $tudoMarcado,
+                                ]) aria-pressed="{{ $tudoMarcado ? 'true' : 'false' }}" aria-label="{{ $tudoMarcado ? __('Desmarcar as notas de :f', ['f' => $f->nome ?? $f->cnpj]) : __('Marcar as :n notas a consultar de :f', ['n' => $aConsultar, 'f' => $f->nome ?? $f->cnpj]) }}">
+                                    @if ($tudoMarcado)
+                                        <flux:icon.check variant="micro" />{{ __('Marcadas') }}
+                                    @elseif ($marcadasAqui > 0)
+                                        {{ __(':m de :n', ['m' => $fmt($marcadasAqui), 'n' => $fmt($aConsultar)]) }}
+                                    @else
+                                        {{ __('Selecionar (:n)', ['n' => $fmt($aConsultar)]) }}
+                                    @endif
+                                </button>
+                            @endif
+                        </div>
+
+                        @if ($aberto)
+                            <div id="notas-{{ $f->cnpj }}" class="border-t border-zinc-200 dark:border-zinc-700">
+                                <ul role="list" class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                                    @foreach ($this->notasDosAbertos[$f->cnpj] ?? [] as $c)
+                                        @php
+                                            $numero = ltrim(substr($c->chave, 25, 9), '0') ?: '0';
+                                            $serie = ltrim(substr($c->chave, 22, 3), '0') ?: '0';
+                                            $marcavel = $c->consultavel();
+                                            $clicavel = $marcavel && ! $todas;
+                                            $semNota = $c->semNotaNoSped() && $c->status !== ChaveHistoricaStatus::Encontrada;
+                                            [$ponto, $cor] = $semNota ? ['bg-zinc-400', 'text-zinc-500 dark:text-zinc-400'] : $tom($c->status);
+                                            $situacao = $semNota ? __('Cancelada no SPED') : $c->status->label();
+                                        @endphp
+                                        <li wire:key="forn-nota-{{ $c->id }}">
+                                            <{{ $clicavel ? 'label' : 'div' }} @class([
+                                                'grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 py-2 pe-4 text-sm transition-colors has-[:checked]:bg-zinc-100 sm:grid-cols-[2.75rem_7rem_minmax(0,1fr)_9rem_10rem] sm:gap-x-5 dark:has-[:checked]:bg-white/[0.07]',
+                                                'cursor-pointer hover:bg-white dark:hover:bg-white/[0.03]' => $clicavel,
+                                                'opacity-60' => $semNota,
+                                            ])>
+                                                <span class="flex justify-center">
+                                                    @if ($marcavel && $todas)
+                                                        <input type="checkbox" checked disabled aria-label="{{ __('Marcada (todas selecionadas)') }}" class="size-4 accent-zinc-800 dark:accent-white">
+                                                    @elseif ($marcavel)
+                                                        <input type="checkbox" wire:model.live="selecionados" value="{{ $c->id }}" aria-label="{{ __('Marcar a nota :n', ['n' => $numero]) }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
+                                                    @endif
+                                                </span>
+                                                <span class="min-w-0">
+                                                    <span class="block font-medium tabular-nums text-zinc-900 dark:text-white">{{ __('NF :n', ['n' => $numero]) }}<span class="font-normal text-zinc-400 dark:text-zinc-500">/{{ $serie }}</span></span>
+                                                    <span class="block text-xs tabular-nums text-zinc-500 dark:text-zinc-400">{{ $c->sped_data?->format('d/m/Y') ?? '—' }}</span>
+                                                </span>
+                                                <span class="truncate text-zinc-600 max-sm:hidden dark:text-zinc-300" @if ($c->cfop) title="{{ __('CFOP :c', ['c' => $c->cfop]) }}" @endif>{{ $c->natureza?->label() ?? '—' }}</span>
+                                                <span class="text-end font-semibold tabular-nums text-zinc-900 dark:text-white">{{ $c->sped_valor !== null ? Fmt::money($c->sped_valor) : '—' }}</span>
+                                                <span class="flex items-center gap-2 max-sm:hidden {{ $cor }}">
+                                                    <span @class(['size-2 shrink-0 rounded-full', $ponto, 'animate-pulse' => $c->status === ChaveHistoricaStatus::Pendente]) aria-hidden="true"></span>
+                                                    @if ($notaId = $this->notas[$c->chave] ?? null)
+                                                        <a href="{{ route('documents.show', $notaId) }}" wire:navigate class="relative z-10 underline decoration-current/30 underline-offset-4 hover:decoration-current">{{ __('Abrir nota') }}</a>
+                                                    @else
+                                                        <span class="truncate">{{ $situacao }}</span>
+                                                    @endif
+                                                </span>
+                                            </{{ $clicavel ? 'label' : 'div' }}>
+                                        </li>
+                                    @endforeach
+                                </ul>
+                            </div>
+                        @endif
+                    </section>
+                @empty
+                    <div class="flex flex-col items-center gap-2 px-4 py-14 text-center">
+                        <flux:icon.building-storefront class="size-6 text-zinc-400" />
+                        <flux:heading>{{ __('Nenhum fornecedor com esses filtros.') }}</flux:heading>
+                        <flux:button size="sm" variant="ghost" wire:click="limparFiltros">{{ __('Limpar filtros') }}</flux:button>
+                    </div>
+                @endforelse
+            </div>
+
+            <flux:pagination :paginator="$this->fornecedoresAgrupados" />
+        @else
         @if ($this->fornecedorFiltrado)
             <div class="flex flex-wrap items-center gap-2 text-sm">
                 <span class="text-zinc-500 dark:text-zinc-400">{{ __('Fornecedor') }}</span>
@@ -594,6 +820,7 @@ new #[Title('Chaves do SPED')] class extends Component {
         </div>
 
         <flux:pagination :paginator="$this->chaves" />
+        @endif
 
         {{-- Barra de ação: aparece presa ao pé da tela assim que há chaves marcadas. --}}
         @if ($this->marcadas)
