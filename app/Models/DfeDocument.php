@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\ConferenciaSped;
 use App\Enums\DfeSchema;
 use App\Enums\DocumentoTipo;
 use App\Enums\ManifestacaoStatus;
@@ -27,11 +28,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property Situacao $situacao
  * @property bool $tem_xml_completo
  * @property bool $xml_reconstruido
+ * @property ConferenciaSped|null $conferencia_sped
+ * @property string|null $conferencia_sped_detalhe
  * @property ManifestacaoStatus|null $manifestacao_status
  * @property string|null $xml_path
  * @property string|null $resumo_xml_path
  */
-#[Fillable(['tipo', 'chave', 'nsu', 'schema', 'emitente_cnpj', 'emitente_nome', 'data_emissao', 'valor_total', 'situacao', 'tem_xml_completo', 'xml_reconstruido', 'manifestacao_status', 'xml_path', 'resumo_xml_path'])]
+#[Fillable(['tipo', 'chave', 'nsu', 'schema', 'emitente_cnpj', 'emitente_nome', 'data_emissao', 'valor_total', 'situacao', 'tem_xml_completo', 'xml_reconstruido', 'conferencia_sped', 'conferencia_sped_detalhe', 'manifestacao_status', 'xml_path', 'resumo_xml_path'])]
 class DfeDocument extends Model
 {
     protected function casts(): array
@@ -45,6 +48,7 @@ class DfeDocument extends Model
             'valor_total' => 'decimal:2',
             'tem_xml_completo' => 'boolean',
             'xml_reconstruido' => 'boolean',
+            'conferencia_sped' => ConferenciaSped::class,
         ];
     }
 

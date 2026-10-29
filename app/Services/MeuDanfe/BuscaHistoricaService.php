@@ -21,7 +21,7 @@ class BuscaHistoricaService
 {
     private const MAX_TENTATIVAS = 3;
 
-    public function __construct(private MeuDanfeClient $client, private DocumentProcessor $processor) {}
+    public function __construct(private MeuDanfeClient $client, private DocumentProcessor $processor, private ConferenciaSpedService $conferencia) {}
 
     /** @return array{encontradas: int, nao_encontradas: int, erros: int, sem_saldo: bool} */
     public function buscar(int $limite): array
@@ -88,7 +88,9 @@ class BuscaHistoricaService
             DB::transaction(function () use ($item, $xml): void {
                 // NSU zerado: a nota não veio da distribuição, como na consulta por chave (consChNFe).
                 $this->processor->process($item->company, new DocZip('000000000000000', 'procNFe', DfeSchema::ProcNFe, $xml));
-                $item->company->documents()->where('chave', $item->chave)->update(['xml_reconstruido' => true]);
+                $document = $item->company->documents()->where('chave', $item->chave)->sole();
+                $document->update(['xml_reconstruido' => true]);
+                $this->conferencia->conferir($document, $item, $xml);
                 $this->finalizar($item, ChaveHistoricaStatus::Encontrada);
             });
 

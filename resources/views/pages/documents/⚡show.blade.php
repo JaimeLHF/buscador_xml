@@ -162,6 +162,11 @@ new #[Title('Nota fiscal')] class extends Component {
                     <flux:badge color="amber">{{ __('XML reconstruído') }}</flux:badge>
                 </flux:tooltip>
             @endif
+            @if ($document->conferencia_sped)
+                <flux:tooltip :content="$document->conferencia_sped_detalhe ?? __('Valor total e data de emissão iguais aos do SPED.')">
+                    <flux:badge :color="$document->conferencia_sped === App\Enums\ConferenciaSped::Confere ? 'green' : 'red'">{{ $document->conferencia_sped->label() }}</flux:badge>
+                </flux:tooltip>
+            @endif
             <flux:badge :color="match ($document->situacao) { App\Enums\Situacao::Autorizada => 'green', App\Enums\Situacao::Cancelada => 'red', default => 'amber' }">
                 {{ $document->situacao->label() }}
             </flux:badge>

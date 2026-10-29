@@ -1,6 +1,7 @@
 <?php
 
 use App\Enums\ChaveHistoricaStatus;
+use App\Enums\ConferenciaSped;
 use App\Models\Company;
 use App\Models\User;
 use App\Services\MeuDanfe\BuscaHistoricaService;
@@ -112,4 +113,82 @@ it('imports SPED files from the company page', function () {
         ->assertSee('1 notas de entrada encontradas no SPED, 1 novas na fila.');
 
     expect($company->chavesHistoricas()->count())->toBe(1);
+});
+
+/** C100 da chave da fixture procNFe.xml (vNF 1500.75, emitida em 20/10/2026). */
+function spedDaFixture(string $data = '20102026', string $valor = '1500,75'): string
+{
+    return implode("\r\n", [
+        '|0000|017|0|01102026|31102026|EMPRESA|12345678000195||SC|||||A|1|',
+        '|C100|0|1|F1|55|00|1|123|'.CHAVE_HIST."|{$data}|{$data}|{$valor}|",
+    ]);
+}
+
+function meuDanfeEntrega(): void
+{
+    Http::fake([
+        MEUDANFE.'fd/add/*' => Http::response(['status' => 'OK']),
+        MEUDANFE.'fd/get/xml/*' => Http::response(['format' => 'XML', 'data' => F::file('procNFe.xml')]),
+    ]);
+}
+
+it('keeps the SPED value and date, and fills them on a key queued before', function () {
+    $this->company->chavesHistoricas()->create(['chave' => CHAVE_HIST, 'tentativas' => 2]);
+
+    expect(SpedChaves::importar($this->company, spedDaFixture())['novas'])->toBe(0);
+
+    $item = $this->company->chavesHistoricas()->sole();
+    expect($item->sped_valor)->toBe('1500.75')
+        ->and($item->sped_data->format('Y-m-d'))->toBe('2026-10-20')
+        ->and($item->tentativas)->toBe(2);
+});
+
+it('marks the rebuilt XML as matching the SPED when value and date agree', function () {
+    SpedChaves::importar($this->company, spedDaFixture());
+    meuDanfeEntrega();
+
+    app(BuscaHistoricaService::class)->buscar(10);
+
+    expect($this->company->documents()->sole())
+        ->conferencia_sped->toBe(ConferenciaSped::Confere)
+        ->conferencia_sped_detalhe->toBeNull();
+});
+
+it('flags a divergence and says what differs', function (string $data, string $valor, string $trecho) {
+    SpedChaves::importar($this->company, spedDaFixture($data, $valor));
+    meuDanfeEntrega();
+
+    app(BuscaHistoricaService::class)->buscar(10);
+
+    $document = $this->company->documents()->sole();
+    expect($document->conferencia_sped)->toBe(ConferenciaSped::Diverge)
+        ->and($document->conferencia_sped_detalhe)->toContain($trecho)
+        // A nota continua gravada: divergir é para alguém olhar, não para sumir.
+        ->and($document->tem_xml_completo)->toBeTrue();
+})->with([
+    'valor' => ['20102026', '1500,74', 'valor 1500.75 no XML e 1500.74 no SPED'],
+    'data' => ['19102026', '1500,75', 'emissão 2026-10-20 no XML e 2026-10-19 no SPED'],
+]);
+
+it('leaves the check empty when the key has no SPED value or date', function () {
+    $this->company->chavesHistoricas()->create(['chave' => CHAVE_HIST]);
+    meuDanfeEntrega();
+
+    app(BuscaHistoricaService::class)->buscar(10);
+
+    expect($this->company->documents()->sole()->conferencia_sped)->toBeNull();
+});
+
+it('checks XMLs received before the SPED was reimported', function () {
+    $this->company->chavesHistoricas()->create(['chave' => CHAVE_HIST]);
+    meuDanfeEntrega();
+    app(BuscaHistoricaService::class)->buscar(10);
+
+    SpedChaves::importar($this->company, spedDaFixture());
+
+    $this->artisan('historico:conferir', ['company' => $this->company->id])
+        ->expectsOutputToContain('Confere: 1 · Diverge: 0')
+        ->assertSuccessful();
+
+    expect($this->company->documents()->sole()->conferencia_sped)->toBe(ConferenciaSped::Confere);
 });

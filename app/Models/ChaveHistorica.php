@@ -18,8 +18,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $tentativas
  * @property string|null $ultimo_erro
  * @property CarbonImmutable|null $buscado_em
+ * @property string|null $sped_valor VL_DOC do C100
+ * @property CarbonImmutable|null $sped_data DT_DOC do C100
  */
-#[Fillable(['chave', 'status', 'tentativas', 'ultimo_erro', 'buscado_em'])]
+#[Fillable(['chave', 'status', 'tentativas', 'ultimo_erro', 'buscado_em', 'sped_valor', 'sped_data'])]
 class ChaveHistorica extends Model
 {
     protected $table = 'chaves_historicas';
@@ -32,6 +34,8 @@ class ChaveHistorica extends Model
             'status' => ChaveHistoricaStatus::class,
             'tentativas' => 'integer',
             'buscado_em' => 'datetime',
+            'sped_valor' => 'decimal:2',
+            'sped_data' => 'date',
         ];
     }
 

@@ -113,6 +113,8 @@ class DocumentController extends Controller
             'manifestacao' => $d->manifestacao_status?->value,
             'xml_completo' => $d->tem_xml_completo,
             'xml_reconstruido' => $d->xml_reconstruido,
+            'conferencia_sped' => $d->conferencia_sped?->value,
+            'conferencia_sped_detalhe' => $d->conferencia_sped_detalhe,
             'atualizado_em' => $d->updated_at?->toIso8601String(),
         ];
     }
