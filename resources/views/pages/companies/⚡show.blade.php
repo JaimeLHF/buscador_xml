@@ -1,13 +1,23 @@
 <?php
 
+use App\Enums\ChaveHistoricaStatus;
 use App\Models\Company;
+use App\Services\MeuDanfe\SpedChaves;
 use App\Services\Sefaz\SyncProgress;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Title;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new #[Title('Empresa')] class extends Component {
+    use WithFileUploads;
+
     public Company $company;
+
+    /** @var list<Illuminate\Http\UploadedFile> */
+    public array $speds = [];
+
+    public ?string $spedMensagem = null;
 
     public function mount(Company $company): void
     {
@@ -27,6 +37,33 @@ new #[Title('Empresa')] class extends Component {
     public function syncStatus(): ?array
     {
         return SyncProgress::get($this->company->id);
+    }
+
+    /** Notas antigas (fora do prazo da SEFAZ): as chaves do SPED vão para a fila do Meu Danfe. */
+    public function importarSped(): void
+    {
+        Gate::authorize('update', $this->company);
+
+        $this->validate(['speds' => 'required|array|max:24', 'speds.*' => 'file|mimes:txt|max:51200']);
+
+        $lidas = $novas = 0;
+
+        foreach ($this->speds as $arquivo) {
+            $r = SpedChaves::importar($this->company, (string) file_get_contents($arquivo->getRealPath()));
+            $lidas += $r['lidas'];
+            $novas += $r['novas'];
+        }
+
+        $this->reset('speds');
+        unset($this->historico);
+        $this->spedMensagem = __(':l notas de entrada encontradas no SPED, :n novas na fila.', ['l' => $lidas, 'n' => $novas]);
+    }
+
+    /** @return array<string, int> */
+    #[Livewire\Attributes\Computed]
+    public function historico(): array
+    {
+        return $this->company->chavesHistoricas()->toBase()->selectRaw('status, count(*) as total')->groupBy('status')->pluck('total', 'status')->map(fn ($n) => (int) $n)->all();
     }
 
     #[Livewire\Attributes\Computed]
@@ -245,6 +282,34 @@ new #[Title('Empresa')] class extends Component {
             @endif
         </flux:card>
     </div>
+
+    @can('update', $company)
+        <flux:card class="space-y-4">
+            <div>
+                <flux:heading size="lg" level="2">{{ __('Notas antigas (SPED)') }}</flux:heading>
+                <flux:text>{{ __('A SEFAZ só entrega o XML das notas dos últimos 3 meses. Envie os arquivos SPED EFD ICMS/IPI: as notas de entrada são buscadas no Meu Danfe (R$ 0,03 por nota), algumas por hora.') }}</flux:text>
+            </div>
+
+            @if ($this->historico)
+                <div class="flex flex-wrap gap-2">
+                    @foreach (ChaveHistoricaStatus::cases() as $st)
+                        @if ($n = $this->historico[$st->value] ?? 0)
+                            <flux:badge size="sm" :color="match($st) { ChaveHistoricaStatus::Encontrada => 'green', ChaveHistoricaStatus::Pendente => 'blue', ChaveHistoricaStatus::Erro => 'red', default => 'zinc' }">{{ $st->label() }}: {{ number_format($n, 0, ',', '.') }}</flux:badge>
+                        @endif
+                    @endforeach
+                </div>
+            @endif
+
+            <form wire:submit="importarSped" class="flex flex-wrap items-end gap-3">
+                <flux:input type="file" wire:model="speds" multiple accept=".txt" :label="__('Arquivos SPED (.txt)')" />
+                <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="speds,importarSped">{{ __('Importar chaves') }}</flux:button>
+            </form>
+
+            @if ($spedMensagem)
+                <flux:callout icon="check-circle" color="green" :heading="$spedMensagem" />
+            @endif
+        </flux:card>
+    @endcan
 
     <div class="space-y-3">
         <div class="flex items-center justify-between">

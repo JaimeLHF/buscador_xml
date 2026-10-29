@@ -39,4 +39,13 @@ return [
         'admins' => env('HORIZON_ADMINS', ''),
     ],
 
+    // Notas antigas (fora dos ~90 dias da SEFAZ): busca paga por chave no acervo do Meu Danfe (R$ 0,03 por consulta).
+    'meudanfe' => [
+        'url' => env('MEU_DANFE_API_URL', 'https://api.meudanfe.com.br/v2'),
+        'key' => env('MEU_DANFE_API_KEY'),
+        // A mesma chave não pode ser consultada mais de uma vez por segundo, ou a conta é bloqueada.
+        'intervalo_segundos' => 2,
+        'max_consultas_por_chave' => 15,
+    ],
+
 ];

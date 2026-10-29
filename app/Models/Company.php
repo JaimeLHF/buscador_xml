@@ -91,6 +91,12 @@ class Company extends Model
         return $this->hasMany(DfeDocument::class);
     }
 
+    /** @return HasMany<ChaveHistorica, $this> */
+    public function chavesHistoricas(): HasMany
+    {
+        return $this->hasMany(ChaveHistorica::class);
+    }
+
     /** @return HasMany<DfeEvent, $this> */
     public function events(): HasMany
     {
