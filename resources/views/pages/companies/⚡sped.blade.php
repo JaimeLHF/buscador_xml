@@ -133,13 +133,6 @@ new #[Title('Chaves do SPED')] class extends Component {
         return $this->filtradas()->whereIn('status', self::statusSelecionaveis())->consultaveis()->count();
     }
 
-    /** @return list<int> */
-    #[Computed]
-    public function selecionaveisNaPagina(): array
-    {
-        return $this->chaves->getCollection()->filter(fn (ChaveHistorica $c) => $c->consultavel())->pluck('id')->all();
-    }
-
     /**
      * Quantidade e valor de cada dia da página, contando o dia inteiro dentro dos filtros (não só o que coube na página).
      *
@@ -161,17 +154,6 @@ new #[Title('Chaves do SPED')] class extends Component {
     {
         return $this->company->documents()->toBase()->where('tem_xml_completo', true)
             ->whereIn('chave', $this->chaves->getCollection()->pluck('chave')->all())->pluck('id', 'chave')->all();
-    }
-
-    /** Marca as selecionáveis da página; se já estavam todas marcadas, desmarca. */
-    public function alternarPagina(): void
-    {
-        $pagina = $this->selecionaveisNaPagina;
-        $marcadas = array_map('intval', $this->selecionados);
-
-        $this->selecionados = array_diff($pagina, $marcadas) === []
-            ? array_values(array_diff($marcadas, $pagina))
-            : array_slice(array_values(array_unique([...$marcadas, ...$pagina])), 0, self::LOTE_MAXIMO);
     }
 
     public function marcarFiltradas(): void
@@ -261,9 +243,6 @@ new #[Title('Chaves do SPED')] class extends Component {
                 'red' => ['bg-red-500', 'text-red-700 dark:text-red-400'],
                 default => ['bg-zinc-400', 'text-zinc-500 dark:text-zinc-400'],
             };
-            $pagina = $this->selecionaveisNaPagina;
-            $marcadas = array_map('intval', $selecionados);
-            $paginaToda = $pagina !== [] && array_diff($pagina, $marcadas) === [];
             $grade = 'grid grid-cols-[2.75rem_minmax(0,1fr)_auto] items-center gap-x-3 md:grid-cols-[2.75rem_minmax(0,1fr)_6rem_10rem_9.5rem_11rem] md:gap-x-5';
         @endphp
 
@@ -328,18 +307,14 @@ new #[Title('Chaves do SPED')] class extends Component {
                             </flux:modal.trigger>
                         </div>
                     @else
-                        <flux:text size="sm">{{ __('Marque as chaves para consultar a NF-e completa. Clique em qualquer ponto da linha.') }}</flux:text>
-                        <flux:button size="sm" variant="subtle" wire:click="marcarFiltradas">{{ __('Marcar todas as filtradas (:n)', ['n' => number_format(min($this->selecionaveisFiltradas, $this::LOTE_MAXIMO), 0, ',', '.')]) }}</flux:button>
+                        <flux:button size="sm" variant="primary" icon="check" wire:click="marcarFiltradas">{{ __('Selecionar todas (:n)', ['n' => number_format(min($this->selecionaveisFiltradas, $this::LOTE_MAXIMO), 0, ',', '.')]) }}</flux:button>
+                        <flux:text size="sm">{{ __('ou clique nas linhas para escolher uma a uma') }}</flux:text>
                     @endif
                 </div>
             @endif
 
             <div class="{{ $grade }} border-b border-zinc-200 py-2 pe-4 text-xs font-medium tracking-wide text-zinc-500 uppercase dark:border-zinc-700 dark:text-zinc-400">
-                <span class="flex justify-center">
-                    @if ($pagina)
-                        <input type="checkbox" wire:click="alternarPagina" @checked($paginaToda) aria-label="{{ $paginaToda ? __('Desmarcar as chaves desta página') : __('Marcar as chaves desta página') }}" class="size-4 cursor-pointer accent-zinc-800 dark:accent-white">
-                    @endif
-                </span>
+                <span aria-hidden="true"></span>
                 <span>{{ __('Fornecedor') }}</span>
                 <span class="max-md:hidden">{{ __('Nota') }}</span>
                 <span class="max-md:hidden">{{ __('Natureza') }}</span>
