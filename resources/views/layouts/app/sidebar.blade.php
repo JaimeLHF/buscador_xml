@@ -94,6 +94,11 @@
                                 {{ __('Integrações') }}
                             </flux:menu.item>
                         @endif
+                        @if (auth()->user()->isPlatformAdmin())
+                            <flux:menu.item :href="route('admin.conexoes.index')" icon="shield-check" wire:navigate>
+                                {{ __('Painel admin') }}
+                            </flux:menu.item>
+                        @endif
                         <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
                             {{ __('Settings') }}
                         </flux:menu.item>

@@ -39,6 +39,11 @@ return [
         'admins' => env('HORIZON_ADMINS', ''),
     ],
 
+    // Painel /admin (conexões da API): só os e-mails desta lista, separados por vírgula.
+    'admin' => [
+        'emails' => env('ADMIN_EMAILS', ''),
+    ],
+
     // Notas antigas (fora dos ~90 dias da SEFAZ): busca paga por chave no acervo do Meu Danfe (R$ 0,03 por consulta).
     'meudanfe' => [
         'url' => env('MEU_DANFE_API_URL', 'https://api.meudanfe.com.br/v2'),

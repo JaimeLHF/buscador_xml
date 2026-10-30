@@ -15,6 +15,13 @@ Route::redirect('/', '/documents')->name('home');
 Route::livewire('join/{token}', 'pages::organizations.join')->middleware('throttle:20,1')->name('join');
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    // Painel admin, fora das organizações: conexões da API (chave por empresa) e o que sai por elas.
+    Route::prefix('admin')->middleware('admin')->name('admin.')->group(function () {
+        Route::redirect('/', '/admin/conexoes')->name('index');
+        Route::livewire('conexoes', 'pages::admin.conexoes')->name('conexoes.index');
+        Route::livewire('conexoes/{token}', 'pages::admin.conexao')->name('conexoes.show');
+    });
+
     Route::livewire('organizations/create', 'pages::organizations.create')->name('organizations.create');
     Route::get('invitations/{token}', AcceptInvitationController::class)->middleware('throttle:10,1')->name('invitations.accept');
 

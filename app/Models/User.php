@@ -134,6 +134,14 @@ class User extends Authenticatable implements PasskeyUser
             ->when($this->selectedCompany(), fn (Builder $q, Company $c) => $q->whereKey($c->id));
     }
 
+    /** Operador da plataforma (lista ADMIN_EMAILS): acessa o painel /admin, de fora das organizações. */
+    public function isPlatformAdmin(): bool
+    {
+        $emails = array_filter(array_map(fn (string $e) => strtolower(trim($e)), explode(',', (string) config('services.admin.emails'))));
+
+        return in_array(strtolower($this->email), $emails, true);
+    }
+
     /**
      * Get the user's initials
      */

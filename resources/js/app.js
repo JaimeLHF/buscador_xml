@@ -5,7 +5,7 @@ const ESPERA_MS = 120
 
 const tipoDaTela = (path) => {
     if (/^\/documents\/?$/.test(path)) return 'notas'
-    if (/^\/(documents|suppliers)\/[^/]+\/?$/.test(path)) return 'detalhe'
+    if (/^\/(documents|suppliers|admin\/conexoes)\/[^/]+\/?$/.test(path)) return 'detalhe'
     if (/^\/companies\/(create|[^/]+\/edit)\/?$/.test(path)) return 'formulario'
     if (/^\/companies\/[^/]+(\/sped)?\/?$/.test(path)) return 'detalhe'
     if (/^\/(settings|organization\/integrations|organizations\/create)/.test(path)) return 'formulario'

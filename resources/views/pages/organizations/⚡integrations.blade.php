@@ -2,7 +2,6 @@
 
 use App\Enums\AuditAcao;
 use App\Jobs\SendWebhook;
-use App\Models\ApiToken;
 use App\Services\Webhooks\WebhookUrl;
 use App\Support\Audit;
 use App\Support\Fmt;
@@ -14,11 +13,6 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 
 new #[Title('Integrações')] class extends Component {
-    public string $nome = '';
-
-    /** Token recém-criado: aparece uma única vez e some ao sair da página. */
-    public ?string $tokenGerado = null;
-
     public string $webhookUrl = '';
 
     public function mount(): void
@@ -37,30 +31,7 @@ new #[Title('Integrações')] class extends Component {
     #[Computed]
     public function tokens()
     {
-        return $this->organization->apiTokens()->active()->latest()->get();
-    }
-
-    public function criarToken(): void
-    {
-        abort_unless(Auth::user()->managesCurrentOrganization(), 403);
-        $this->validate(['nome' => ['required', 'string', 'max:60']]);
-
-        [$token, $this->tokenGerado] = ApiToken::issue($this->organization, trim($this->nome), Auth::user());
-        Audit::record(AuditAcao::TokenCriado, $this->organization->id, descricao: $token->name);
-
-        $this->reset('nome');
-        unset($this->tokens);
-    }
-
-    public function revogar(int $id): void
-    {
-        abort_unless(Auth::user()->managesCurrentOrganization(), 403);
-        $token = $this->organization->apiTokens()->active()->findOrFail($id);
-        $token->update(['revoked_at' => now()]);
-        Audit::record(AuditAcao::TokenRevogado, $this->organization->id, descricao: $token->name);
-
-        unset($this->tokens);
-        Flux::toast(text: __('Chave revogada. O sistema que a usava perde o acesso na hora.'));
+        return $this->organization->apiTokens()->active()->with('company:id,razao_social,cnpj')->latest()->get();
     }
 
     public function salvarWebhook(): void
@@ -117,38 +88,24 @@ new #[Title('Integrações')] class extends Component {
     {{-- Chaves de API --}}
     <div class="space-y-4 border border-zinc-200 p-4 dark:border-zinc-700">
         <flux:heading size="lg" level="2">{{ __('Chaves de acesso à API') }}</flux:heading>
-        <flux:text size="sm">{{ __('Cada chave dá acesso só de leitura a todas as notas desta organização. Crie uma por sistema, para poder revogar uma sem afetar as outras.') }}</flux:text>
-
-        @if ($tokenGerado)
-            <flux:callout icon="key" color="amber">
-                <flux:callout.heading>{{ __('Copie a chave agora: ela não será mostrada de novo.') }}</flux:callout.heading>
-                <flux:callout.text><code class="font-mono text-sm break-all select-all">{{ $tokenGerado }}</code></flux:callout.text>
-            </flux:callout>
-        @endif
-
-        <form wire:submit="criarToken" class="flex flex-wrap items-end gap-4">
-            <flux:input wire:model="nome" :label="__('Nome do sistema')" :placeholder="__('Ex.: ERP Protheus')" required maxlength="60" class="min-w-64 flex-1" />
-            <flux:button type="submit" variant="primary">{{ __('Criar chave') }}</flux:button>
-        </form>
+        <flux:text size="sm">{{ __('As chaves são criadas pelo suporte do FinderXML, uma por empresa e por sistema, e dão acesso só de leitura às notas daquela empresa. Para pedir ou revogar uma chave, fale com o suporte.') }}</flux:text>
 
         @if ($this->tokens->isNotEmpty())
             <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:table>
                 <flux:table.columns>
-                    <flux:table.column>{{ __('Nome') }}</flux:table.column>
+                    <flux:table.column>{{ __('Sistema') }}</flux:table.column>
+                    <flux:table.column>{{ __('Empresa') }}</flux:table.column>
                     <flux:table.column>{{ __('Começa com') }}</flux:table.column>
                     <flux:table.column>{{ __('Último uso') }}</flux:table.column>
-                    <flux:table.column></flux:table.column>
                 </flux:table.columns>
                 <flux:table.rows>
                     @foreach ($this->tokens as $token)
                         <flux:table.row :key="$token->id">
                             <flux:table.cell>{{ $token->name }}</flux:table.cell>
+                            <flux:table.cell>{{ $token->company?->razao_social ?? __('Todas as empresas') }}</flux:table.cell>
                             <flux:table.cell class="font-mono text-xs">{{ $token->prefixo }}…</flux:table.cell>
                             <flux:table.cell>{{ $token->last_used_at ? Fmt::dateTime($token->last_used_at) : __('nunca') }}</flux:table.cell>
-                            <flux:table.cell align="end">
-                                <flux:button size="sm" variant="ghost" wire:click="revogar({{ $token->id }})" wire:confirm="{{ __('Revogar a chave :n? O sistema que a usa perde o acesso.', ['n' => $token->name]) }}">{{ __('Revogar') }}</flux:button>
-                            </flux:table.cell>
                         </flux:table.row>
                     @endforeach
                 </flux:table.rows>
@@ -161,6 +118,7 @@ new #[Title('Integrações')] class extends Component {
             <div class="mt-3 space-y-2 text-zinc-700 dark:text-zinc-300">
                 <p>{{ __('Envie a chave no cabeçalho Authorization: Bearer <chave>. Limite de 120 chamadas por minuto por chave.') }}</p>
                 <ul class="list-disc space-y-1 ps-5 font-mono text-xs">
+                    <li>GET {{ url('/api/v1/conexao') }}</li>
                     <li>GET {{ url('/api/v1/documents') }}?alterados_desde=2026-10-01T00:00:00-03:00</li>
                     <li>GET {{ url('/api/v1/documents') }}/{chave}</li>
                     <li>GET {{ url('/api/v1/documents') }}/{chave}/xml</li>

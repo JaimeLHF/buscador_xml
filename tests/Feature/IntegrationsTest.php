@@ -105,17 +105,17 @@ it('refuses webhook addresses on internal networks or without https', function (
     expect(fn () => WebhookUrl::resolve($url))->toThrow(InvalidArgumentException::class);
 })->with(['http://8.8.8.8/x', 'https://127.0.0.1/x', 'https://10.0.0.5/x', 'https://169.254.169.254/latest', 'https://user:pass@8.8.8.8/x', 'ftp://8.8.8.8']);
 
-it('lets managers create a token shown once and revoke it, but not members', function () {
-    $page = Livewire::actingAs($this->user)->test('pages::organizations.integrations')
-        ->set('nome', 'Contador')
-        ->call('criarToken');
+it('shows the organization keys read-only to managers, without creating or revoking, and hides the page from members', function () {
+    [, $plain] = ApiToken::issueForCompany($this->company, 'Costhub', null);
 
-    $plain = $page->get('tokenGerado');
-    expect($plain)->toStartWith('bxml_')
-        ->and(ApiToken::findActive($plain)->name)->toBe('Contador');
+    Livewire::actingAs($this->user)->test('pages::organizations.integrations')
+        ->assertSee('Costhub')
+        ->assertDontSee($plain)
+        ->assertDontSee('Criar chave')
+        ->assertDontSee('Revogar');
 
-    $page->call('revogar', ApiToken::findActive($plain)->id);
-    expect(ApiToken::findActive($plain))->toBeNull();
+    expect(fn () => Livewire::actingAs($this->user)->test('pages::organizations.integrations')->call('criarToken'))
+        ->toThrow(Exception::class);
 
     $member = User::factory()->create();
     $this->org->addMember($member, OrganizationRole::Member);

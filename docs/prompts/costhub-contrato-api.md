@@ -1,6 +1,11 @@
 # Contrato da API FinderXML → Costhub
 
-Texto para colar na sessão do Costhub. Atualizado em 29/10/2026, já em produção (FinderXML commit 078c6d5). Substitui o contrato enviado antes: a única mudança é o status `importada` em `chaves_sped` da `/cobertura` (item 4).
+Texto para colar na sessão do Costhub. Atualizado em 30/10/2026. Substitui o contrato enviado antes. Mudanças desde 29/10:
+
+- A chave agora é de UMA empresa (conexão criada no painel admin do FinderXML). Ela só enxerga as notas daquela empresa (item 1).
+- Nova rota `GET /api/v1/conexao` para confirmar a conexão quando a chave é colada (item 1.1).
+- `empresa_cnpj` passou a ser opcional em `/documents` e em `/cobertura` (itens 2 e 4).
+- Continua valendo: status `importada` em `chaves_sped` da `/cobertura` (item 4).
 
 ---
 
@@ -8,9 +13,31 @@ Contexto: o Costhub lê as NF-e de compra dos clientes só pela API de leitura d
 
 ## 1. Autenticação
 
-- Header `Authorization: Bearer bxml_...` (token da organização, só leitura).
-- Tudo é restrito à organização do token. CNPJ de empresa de outra organização devolve lista vazia, nunca erro e nunca dado alheio.
-- Token ausente, errado ou revogado: HTTP 401.
+- Header `Authorization: Bearer bxml_...` (chave da conexão, só leitura).
+- Cada chave é de uma empresa: o operador do FinderXML cria a conexão no painel admin, escolhe a empresa (ex.: MOVEIS RUIZ) e entrega a chave. No Costhub, o cliente cola a chave na conexão com o FinderXML.
+- Tudo é restrito à empresa da chave. Pedir o CNPJ de outra empresa devolve lista vazia, nunca erro e nunca dado alheio.
+- Chave ausente, errada ou revogada: HTTP 401. Quando o FinderXML gera uma chave nova para a mesma conexão, a anterior passa a dar 401 na hora: o Costhub deve mostrar "conexão revogada, cole a chave nova".
+- Cada chamada fica registrada no FinderXML (rota, chave da nota, quantidade, status, IP).
+
+### 1.1 GET /api/v1/conexao
+
+Chame ao salvar a chave, para validar e mostrar a qual empresa ela ficou ligada ("Conectado à MOVEIS RUIZ"):
+
+```json
+{
+  "data": {
+    "conexao": "Costhub",
+    "criada_em": "2026-10-30T12:09:40+00:00",
+    "escopo": "empresa",
+    "empresas": [
+      { "cnpj": "24287808000160", "razao_social": "RUIZ INDUSTRIA E COMERCIO DE MOVEIS LTDA", "nome_fantasia": "MOVEIS RUIZ", "uf": "SC" }
+    ]
+  }
+}
+```
+
+- `escopo = empresa`: a lista `empresas` tem exatamente uma. Guarde o `cnpj` para associar a conexão à empresa certa no Costhub e recuse se não bater com o CNPJ do cliente.
+- `escopo = organizacao`: chave antiga, de antes das conexões, que vale para várias empresas. Não deve aparecer nas conexões novas.
 
 ## 2. GET /api/v1/documents
 
@@ -22,7 +49,7 @@ Parâmetros, todos opcionais:
 | `alterados_desde` | data ISO 8601 | continua funcionando |
 | `tipo` | `nfe` \| `cte` | o Costhub deve mandar `nfe` |
 | `direcao` | `entrada` \| `saida` | compra = `entrada` |
-| `empresa_cnpj` | 14 dígitos, sem pontuação | dígito verificador validado (422 se inválido) |
+| `empresa_cnpj` | 14 dígitos, sem pontuação | opcional: a chave já define a empresa. Dígito verificador validado (422 se inválido); CNPJ de outra empresa dá lista vazia |
 | `situacao` | `autorizada` \| `cancelada` \| `denegada` | |
 | `xml` | `completo` \| `resumo` | |
 | `de`, `ate` | `AAAA-MM-DD` | data de emissão, horário de Brasília |
@@ -93,11 +120,12 @@ Campos que pedem atenção:
 
 ## 4. GET /api/v1/cobertura (monitoramento)
 
-`GET /api/v1/cobertura?empresa_cnpj=12345678000195&de=2026-09&ate=2026-10`
+`GET /api/v1/cobertura?de=2026-09&ate=2026-10`
 
-- `empresa_cnpj`, `de` e `ate` obrigatórios; `de`/`ate` em `AAAA-MM`, `ate >= de`, no máximo 36 meses (senão 422).
+- `de` e `ate` obrigatórios, em `AAAA-MM`, `ate >= de`, no máximo 36 meses (senão 422).
+- `empresa_cnpj` opcional com chave de empresa (usa a da chave); obrigatório só nas chaves antigas de organização.
 - Um bloco por mês do intervalo, mesmo vazio. O mês é o da emissão em America/Sao_Paulo. Chave do SPED sem nota usa a data do C100; sem ela, o AAMM da própria chave, contado em `mes_pela_chave`.
-- Empresa fora da organização do token: `"data": []`.
+- CNPJ de outra empresa que não a da chave: `"data": []`.
 
 ```json
 {
@@ -138,8 +166,10 @@ Atenção: se o Costhub validar a soma dos status contra `total`, inclua `import
 
 ## 5. Recomendação para o conector
 
-1. Rodada de hora em hora por empresa: `GET /documents?tipo=nfe&direcao=entrada&empresa_cnpj=...&cursor=<cursor_retomada salvo>`, seguindo `proximo_cursor` até `null`.
-2. Upsert pela `chave`; atualizar situação, `xml_reconstruido` e conferência quando a nota voltar.
-3. Baixar o XML só quando `xml_completo = true`, pelo `/xml`.
-4. Salvar o `cursor_retomada` da última resposta só depois de gravar a página.
-5. Usar `/cobertura` num painel de monitoramento, não na sincronização.
+1. Ao salvar a chave: `GET /conexao`, confirmar o CNPJ e guardar a chave cifrada.
+2. Rodada de hora em hora por conexão: `GET /documents?tipo=nfe&direcao=entrada&cursor=<cursor_retomada salvo>`, seguindo `proximo_cursor` até `null`.
+3. Upsert pela `chave`; atualizar situação, `xml_reconstruido` e conferência quando a nota voltar.
+4. Baixar o XML só quando `xml_completo = true`, pelo `/xml`.
+5. Salvar o `cursor_retomada` da última resposta só depois de gravar a página.
+6. Em 401, marcar a conexão como revogada e pedir a chave nova; não tentar de novo em loop.
+7. Usar `/cobertura` num painel de monitoramento, não na sincronização.

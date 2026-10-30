@@ -67,6 +67,12 @@ class Company extends Model
         return $this->belongsTo(Organization::class);
     }
 
+    /** @return HasMany<ApiToken, $this> */
+    public function apiTokens(): HasMany
+    {
+        return $this->hasMany(ApiToken::class);
+    }
+
     /** @return HasMany<Certificate, $this> */
     public function certificates(): HasMany
     {

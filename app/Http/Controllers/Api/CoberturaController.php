@@ -28,8 +28,12 @@ class CoberturaController extends Controller
 
     public function __invoke(Request $request): JsonResponse
     {
+        /** @var ApiToken $token */
+        $token = $request->attributes->get('api_token');
+
         $request->validate([
-            'empresa_cnpj' => DocumentController::cnpjRules(obrigatorio: true),
+            // Conexão de uma empresa já diz qual é a empresa: o CNPJ fica opcional.
+            'empresa_cnpj' => DocumentController::cnpjRules(obrigatorio: $token->company_id === null),
             'de' => ['required', 'date_format:Y-m'],
             'ate' => ['required', 'date_format:Y-m', 'after_or_equal:de'],
         ]);
@@ -38,12 +42,10 @@ class CoberturaController extends Controller
         $ate = CarbonImmutable::createFromFormat('!Y-m', $request->string('ate')->value());
         abort_if($de->diffInMonths($ate) >= self::MAX_MESES, 422, 'Intervalo máximo de '.self::MAX_MESES.' meses.');
 
-        $cnpj = Cnpj::normalize($request->string('empresa_cnpj')->value());
+        $cnpj = $request->filled('empresa_cnpj') ? Cnpj::normalize($request->string('empresa_cnpj')->value()) : (string) $token->company?->cnpj;
 
-        /** @var ApiToken $token */
-        $token = $request->attributes->get('api_token');
-        // Só entre as empresas da organização do token: CNPJ de outra organização devolve lista vazia.
-        $companyIds = $token->organization->companies()->where('cnpj', $cnpj)->pluck('id');
+        // Só entre as empresas que a chave enxerga: CNPJ de fora devolve lista vazia.
+        $companyIds = $token->companies()->where('cnpj', $cnpj)->pluck('id');
 
         if ($companyIds->isEmpty()) {
             return response()->json(['empresa_cnpj' => $cnpj, 'data' => []]);

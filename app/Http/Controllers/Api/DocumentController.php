@@ -20,7 +20,7 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * API de leitura para ERPs: lista as notas da organização do token (com cursor, para sincronizar só o que mudou)
+ * API de leitura para ERPs: lista as notas da empresa da conexão (ou da organização, nas chaves antigas) (com cursor, para sincronizar só o que mudou)
  * e entrega o XML. Nunca escreve nem manifesta.
  */
 class DocumentController extends Controller
@@ -55,6 +55,7 @@ class DocumentController extends Controller
             ->cursorPaginate($request->integer('por_pagina', 50));
 
         $ultimo = $page->getCollection()->last();
+        $request->attributes->set('api_quantidade', $page->count());
 
         return response()->json([
             'data' => $page->getCollection()->map(fn (DfeDocument $d) => $this->resource($d))->all(),
@@ -67,6 +68,7 @@ class DocumentController extends Controller
     public function show(Request $request, string $chave): JsonResponse
     {
         $document = $this->find($request, $chave);
+        $request->attributes->set('api_quantidade', 1);
 
         return response()->json(['data' => [
             ...$this->resource($document),
@@ -88,6 +90,7 @@ class DocumentController extends Controller
         $path = $document->xml_path ?? $document->resumo_xml_path;
         $content = $path ? $storage->get($path) : null;
         abort_if($content === null, 404, 'XML não encontrado.');
+        $request->attributes->set('api_quantidade', 1);
 
         Audit::document(AuditAcao::XmlBaixado, $document, 'via API');
 
@@ -97,7 +100,11 @@ class DocumentController extends Controller
     /** @return Builder<DfeDocument> */
     private function query(Request $request): Builder
     {
-        return DocumentFilter::apply($this->token($request)->organization, $request->only(['tipo', 'situacao', 'xml', 'direcao', 'empresa_cnpj', 'de', 'ate', 'busca']));
+        $token = $this->token($request);
+
+        // Conexão de uma empresa: só as notas dela, mesmo que peça o CNPJ de outra (que dá lista vazia).
+        return DocumentFilter::apply($token->organization, $request->only(['tipo', 'situacao', 'xml', 'direcao', 'empresa_cnpj', 'de', 'ate', 'busca']))
+            ->when($token->company_id, fn (Builder $q, int $id) => $q->where('company_id', $id));
     }
 
     private function find(Request $request, string $chave): DfeDocument
