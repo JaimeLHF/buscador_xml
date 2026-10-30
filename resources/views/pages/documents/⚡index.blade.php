@@ -33,7 +33,6 @@ new #[Title('Notas recebidas')] class extends Component {
     #[Url] public string $q = '';
     // A lista abre em NF-e, o foco do sistema; "todos" inclui os CT-e.
     #[Url] public string $tipo = 'nfe';
-    #[Url] public string $company_id = '';
     #[Url] public string $de = '';
     #[Url] public string $ate = '';
     #[Url] public string $valor_min = '';
@@ -51,7 +50,7 @@ new #[Title('Notas recebidas')] class extends Component {
     private const LOTE_MAXIMO = 500;
 
     /** Filtros guardados no painel "Filtros"; a busca e as abas ficam sempre à vista. */
-    private const FILTROS_EXTRAS = ['tipo', 'company_id', 'de', 'ate', 'valor_min', 'valor_max', 'manifestacao'];
+    private const FILTROS_EXTRAS = ['tipo', 'de', 'ate', 'valor_min', 'valor_max', 'manifestacao'];
 
     public function updated(string $property): void
     {
@@ -75,6 +74,7 @@ new #[Title('Notas recebidas')] class extends Component {
     {
         return [
             ...$this->only(self::FILTROS_EXTRAS),
+            'company_id' => $this->empresaSelecionada(),
             'busca' => $this->q,
             'xml' => $this->aba === 'sem_xml' ? 'resumo' : '',
             'situacao' => match ($this->aba) {
@@ -84,6 +84,12 @@ new #[Title('Notas recebidas')] class extends Component {
                 default => '',
             },
         ];
+    }
+
+    /** Empresa escolhida no seletor do menu lateral; vazio é "Todas as empresas". */
+    private function empresaSelecionada(): string
+    {
+        return (string) Auth::user()->selectedCompany()?->id;
     }
 
     #[Computed]
@@ -96,7 +102,7 @@ new #[Title('Notas recebidas')] class extends Component {
     #[Computed]
     public function contagens(): array
     {
-        $base = fn () => DocumentFilter::apply(Auth::user()->currentOrganization, [...$this->only(self::FILTROS_EXTRAS), 'busca' => $this->q]);
+        $base = fn () => DocumentFilter::apply(Auth::user()->currentOrganization, [...$this->only(self::FILTROS_EXTRAS), 'company_id' => $this->empresaSelecionada(), 'busca' => $this->q]);
 
         return [
             'sem_xml' => $base()->where('tem_xml_completo', false)->where('situacao', Situacao::Autorizada)->count(),
@@ -104,11 +110,11 @@ new #[Title('Notas recebidas')] class extends Component {
         ];
     }
 
-    /** Quando o sistema falou com a SEFAZ por último e quando fala de novo (todas as empresas). */
+    /** Quando o sistema falou com a SEFAZ por último e quando fala de novo (empresas do seletor). */
     #[Computed]
     public function sincronizacao(): array
     {
-        $states = SyncState::whereIn('company_id', Auth::user()->currentOrganization->companies()->select('id'));
+        $states = SyncState::whereIn('company_id', Auth::user()->workingCompanies()->select('id'));
 
         return [
             'ultima' => (clone $states)->max('last_checked_at'),
@@ -121,7 +127,7 @@ new #[Title('Notas recebidas')] class extends Component {
     public function bloqueios(): array
     {
         return SyncState::query()
-            ->whereIn('company_id', Auth::user()->currentOrganization->companies()->select('id'))
+            ->whereIn('company_id', Auth::user()->workingCompanies()->select('id'))
             ->where('last_cstat', '656')
             ->whereNotNull('next_check_at')
             ->where('next_check_at', '>', now())
@@ -138,7 +144,7 @@ new #[Title('Notas recebidas')] class extends Component {
     public function sincronizarTodas(): void
     {
         $cooldown = app(\App\Services\Sefaz\CnpjCooldown::class);
-        $companies = Auth::user()->currentOrganization->companies()->where('ativo', true)->get();
+        $companies = Auth::user()->workingCompanies()->where('ativo', true)->get();
         $enfileiradas = 0;
         $proximaLiberacao = null;
         $tiposFiltrados = match ($this->syncTipo) {
@@ -224,11 +230,11 @@ new #[Title('Notas recebidas')] class extends Component {
         }
     }
 
-    /** Status agregado de sync de todas as empresas da organização. */
+    /** Status agregado de sync das empresas do seletor. */
     #[Computed]
     public function syncStatuses(): array
     {
-        $companies = Auth::user()->currentOrganization->companies()->where('ativo', true)->pluck('id', 'razao_social');
+        $companies = Auth::user()->workingCompanies()->where('ativo', true)->pluck('id', 'razao_social');
         $active = [];
 
         foreach ($companies as $nome => $id) {
@@ -242,12 +248,11 @@ new #[Title('Notas recebidas')] class extends Component {
         return $active;
     }
 
-    /** Resumo geral de documentos da organização. */
+    /** Resumo geral de documentos das empresas do seletor. */
     #[Computed]
     public function resumo(): array
     {
-        $org = Auth::user()->currentOrganization;
-        $base = DfeDocument::whereIn('company_id', $org->companies()->select('id'));
+        $base = DfeDocument::whereIn('company_id', Auth::user()->workingCompanies()->select('id'));
 
         return [
             'total' => (clone $base)->count(),
@@ -275,7 +280,7 @@ new #[Title('Notas recebidas')] class extends Component {
     #[Computed]
     public function companies()
     {
-        return Auth::user()->currentOrganization->companies()->orderBy('razao_social')->get(['id', 'razao_social', 'cnpj', 'buscar_cte']);
+        return Auth::user()->workingCompanies()->orderBy('razao_social')->get(['id', 'razao_social', 'cnpj', 'buscar_cte']);
     }
 
     #[Computed]
@@ -566,19 +571,11 @@ new #[Title('Notas recebidas')] class extends Component {
         </div>
     @endif
 
-    {{-- Busca única + filtro de empresa + filtros extras numa gaveta. --}}
+    {{-- Busca única + filtros extras numa gaveta; a empresa vem do seletor do menu lateral. --}}
     <div class="flex gap-2">
         <div class="min-w-0 flex-1">
             <flux:input wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Fornecedor, transportadora, CNPJ ou chave')" :aria-label="__('Buscar notas')" clearable />
         </div>
-        @if ($this->companies->count() > 1)
-            <flux:select wire:model.live="company_id" class="w-48 shrink-0" :aria-label="__('Filtrar por empresa')">
-                <flux:select.option value="">{{ __('Todas as empresas') }}</flux:select.option>
-                @foreach ($this->companies as $c)
-                    <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
-                @endforeach
-            </flux:select>
-        @endif
         <flux:modal.trigger name="filtros">
             <flux:button icon="adjustments-horizontal">
                 <span class="max-sm:sr-only">{{ __('Filtros') }}</span>
@@ -640,7 +637,7 @@ new #[Title('Notas recebidas')] class extends Component {
         ];
     @endphp
 
-    <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="q,aba,company_id,de,ate,valor_min,valor_max,manifestacao,gotoPage,nextPage,previousPage">
+    <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.delay.class="lista-carregando" wire:target="q,aba,de,ate,valor_min,valor_max,manifestacao,gotoPage,nextPage,previousPage">
         <div class="{{ $grade }} border-b border-zinc-200 px-4 py-2 text-xs font-medium tracking-wide text-zinc-500 uppercase max-md:hidden dark:border-zinc-700 dark:text-zinc-400" aria-hidden="true">
             <span>{{ __('Fornecedor') }}</span>
             <span>{{ __('CNPJ') }}</span>
@@ -648,6 +645,8 @@ new #[Title('Notas recebidas')] class extends Component {
             <span>{{ __('Estado') }}</span>
             <span class="text-end">{{ __('Arquivos') }}</span>
         </div>
+
+        <x-esqueleto.linhas />
 
         @forelse ($this->documents->getCollection()->groupBy(fn ($d) => $d->data_emissao?->timezone(Fmt::TIMEZONE)->toDateString() ?? '') as $dia => $docs)
             @php
@@ -761,15 +760,6 @@ new #[Title('Notas recebidas')] class extends Component {
                     <flux:select.option :value="$t->value">{{ $t->label() }}</flux:select.option>
                 @endforeach
             </flux:select>
-
-            @if ($this->companies->count() > 1)
-                <flux:select wire:model.live="company_id" :label="__('Empresa')">
-                    <flux:select.option value="">{{ __('Todas') }}</flux:select.option>
-                    @foreach ($this->companies as $c)
-                        <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
-                    @endforeach
-                </flux:select>
-            @endif
 
             <div class="grid grid-cols-2 gap-4">
                 <flux:input type="date" wire:model.live="de" :label="__('Emitida de')" />

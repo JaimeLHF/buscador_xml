@@ -11,14 +11,11 @@
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
-            <livewire:organization-switcher />
+            <livewire:company-switcher />
 
             <flux:sidebar.nav class="nav-principal">
                 <flux:sidebar.item icon="inbox" :href="route('documents.index')" :current="request()->routeIs('documents.*')" wire:navigate>
                     {{ __('Notas') }}
-                </flux:sidebar.item>
-                <flux:sidebar.item icon="building-office" :href="route('companies.index')" :current="request()->routeIs('companies.*', 'sefaz-log')" wire:navigate>
-                    {{ __('Empresas') }}
                 </flux:sidebar.item>
                 <flux:sidebar.item icon="truck" :href="route('suppliers.index')" :current="request()->routeIs('suppliers.*')" wire:navigate>
                     {{ __('Fornecedores') }}
@@ -26,9 +23,27 @@
                 <flux:sidebar.item icon="arrow-down-tray" :href="route('exports.index')" :current="request()->routeIs('exports.*')" wire:navigate>
                     {{ __('Downloads') }}
                 </flux:sidebar.item>
+
+                {{-- Submenu da empresa escolhida no seletor: cadastro e importação do SPED. --}}
+                @if ($empresaSelecionada = auth()->user()->selectedCompany())
+                    <flux:sidebar.group expandable icon="building-office" :heading="__('Empresa')" data-test="atalhos-empresa">
+                        <flux:sidebar.item :href="route('companies.show', $empresaSelecionada)" :current="request()->routeIs('companies.show', 'companies.edit') && request()->route('company')?->is($empresaSelecionada)" wire:navigate>
+                            {{ __('Cadastro') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item :href="route('companies.sped', $empresaSelecionada)" :current="request()->routeIs('companies.sped') && request()->route('company')?->is($empresaSelecionada)" wire:navigate>
+                            {{ __('Chaves do SPED') }}
+                        </flux:sidebar.item>
+                    </flux:sidebar.group>
+                @endif
             </flux:sidebar.nav>
 
+
             <flux:spacer />
+
+            {{-- Só para quem participa de mais de uma organização; no dia a dia o seletor é o de empresa. --}}
+            @if (auth()->user()->organizations()->count() > 1)
+                <livewire:organization-switcher />
+            @endif
 
             <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
         </flux:sidebar>
@@ -65,6 +80,9 @@
                     <flux:menu.separator />
 
                     <flux:menu.radio.group>
+                        <flux:menu.item :href="route('companies.index')" icon="building-office" wire:navigate>
+                            {{ __('Empresas') }}
+                        </flux:menu.item>
                         <flux:menu.item :href="route('organizations.members')" icon="users" wire:navigate>
                             {{ __('Equipe') }}
                         </flux:menu.item>

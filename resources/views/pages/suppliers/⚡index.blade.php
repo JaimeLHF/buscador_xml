@@ -14,7 +14,6 @@ new #[Title('Fornecedores')] class extends Component {
     use WithPagination;
 
     #[Url] public string $q = '';
-    #[Url] public string $company_id = '';
     #[Url] public string $order = 'docs';
 
     public function updated(string $property): void
@@ -25,15 +24,9 @@ new #[Title('Fornecedores')] class extends Component {
     }
 
     #[Computed]
-    public function companies()
-    {
-        return Auth::user()->currentOrganization->companies()->orderBy('razao_social')->get(['id', 'razao_social', 'cnpj']);
-    }
-
-    #[Computed]
     public function suppliers()
     {
-        $companyIds = Auth::user()->currentOrganization->companies()->select('id');
+        $companyIds = Auth::user()->workingCompanies()->select('id');
 
         $query = DfeDocument::query()
             ->select([
@@ -48,7 +41,6 @@ new #[Title('Fornecedores')] class extends Component {
             ])
             ->whereIn('company_id', $companyIds)
             ->whereNotNull('emitente_cnpj')
-            ->when($this->company_id, fn ($q) => $q->where('company_id', (int) $this->company_id))
             ->when($this->q, function ($q) {
                 $term = trim($this->q);
                 $digits = preg_replace('/\D/', '', $term);
@@ -76,7 +68,7 @@ new #[Title('Fornecedores')] class extends Component {
     {{-- Cabeçalho --}}
     <div class="space-y-1">
         <flux:heading size="xl" level="1">{{ __('Fornecedores') }}</flux:heading>
-        <flux:text>{{ __('Emitentes que aparecem nas notas recebidas pela organização.') }}</flux:text>
+        <flux:text>{{ __('Emitentes que aparecem nas notas recebidas.') }}</flux:text>
     </div>
 
     {{-- Busca, filtros e ordenação --}}
@@ -84,14 +76,6 @@ new #[Title('Fornecedores')] class extends Component {
         <div class="min-w-0 flex-1">
             <flux:input wire:model.live.debounce.400ms="q" icon="magnifying-glass" :placeholder="__('Nome ou CNPJ do fornecedor')" :aria-label="__('Buscar fornecedor')" clearable />
         </div>
-        @if ($this->companies->count() > 1)
-            <flux:select wire:model.live="company_id" class="w-48 shrink-0" :aria-label="__('Filtrar por empresa')">
-                <flux:select.option value="">{{ __('Todas as empresas') }}</flux:select.option>
-                @foreach ($this->companies as $c)
-                    <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
-                @endforeach
-            </flux:select>
-        @endif
         <flux:select wire:model.live="order" class="w-40 shrink-0" :aria-label="__('Ordenar por')">
             <flux:select.option value="docs">{{ __('Mais notas') }}</flux:select.option>
             <flux:select.option value="valor">{{ __('Maior valor') }}</flux:select.option>
@@ -105,7 +89,7 @@ new #[Title('Fornecedores')] class extends Component {
         $grade = 'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 md:grid-cols-[minmax(0,1fr)_11rem_7rem_8.5rem_6rem]';
     @endphp
 
-    <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900" wire:loading.class="opacity-60" wire:target="q,company_id,order,gotoPage,nextPage,previousPage">
+    <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900" wire:loading.delay.class="lista-carregando" wire:target="q,order,gotoPage,nextPage,previousPage">
         <div class="{{ $grade }} border-b border-zinc-200 px-5 py-2.5 text-xs font-medium tracking-wide text-zinc-500 uppercase max-md:hidden dark:border-zinc-700 dark:text-zinc-400" aria-hidden="true">
             <span>{{ __('Fornecedor') }}</span>
             <span>{{ __('CNPJ') }}</span>
@@ -113,6 +97,8 @@ new #[Title('Fornecedores')] class extends Component {
             <span class="text-end">{{ __('Valor total') }}</span>
             <span class="text-end">{{ __('Última nota') }}</span>
         </div>
+
+        <x-esqueleto.linhas />
 
         <ul role="list" class="divide-y divide-zinc-100 dark:divide-zinc-800">
             @forelse ($this->suppliers as $supplier)

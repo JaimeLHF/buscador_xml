@@ -10,7 +10,13 @@ new #[Title('Downloads')] class extends Component {
     #[Computed]
     public function exports()
     {
-        return Auth::user()->currentOrganization->exports()->where('user_id', Auth::id())->latest()->limit(30)->get();
+        $empresa = Auth::user()->selectedCompany();
+
+        // Com uma empresa no seletor, só os arquivos pedidos com ela; "Todas as empresas" mostra tudo.
+        return Auth::user()->currentOrganization->exports()
+            ->where('user_id', Auth::id())
+            ->when($empresa, fn ($q, $c) => $q->where('filters->company_id', (string) $c->id))
+            ->latest()->limit(30)->get();
     }
 
     #[Computed]

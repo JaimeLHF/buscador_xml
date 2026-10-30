@@ -9,5 +9,7 @@
         @endif
 
         {{ $slot }}
+
+        <x-esqueleto.pagina />
     </flux:main>
 </x-layouts::app.sidebar>

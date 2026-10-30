@@ -19,6 +19,9 @@
         </div>
         <flux:menu.separator />
         <flux:menu.radio.group>
+            <flux:menu.item :href="route('companies.index')" icon="building-office" wire:navigate>
+                {{ __('Empresas') }}
+            </flux:menu.item>
             <flux:menu.item :href="route('organizations.members')" icon="users" wire:navigate>
                 {{ __('Equipe') }}
             </flux:menu.item>

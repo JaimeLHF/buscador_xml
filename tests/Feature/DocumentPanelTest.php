@@ -66,7 +66,11 @@ it('never lists documents from other organizations', function () {
         ->assertSee('FORNECEDOR EXEMPLO LTDA')
         ->assertDontSee('SEGREDO DE OUTRO CLIENTE');
 
-    Livewire::actingAs($this->user)->test('pages::documents.index')->set('company_id', (string) $foreign->id)
+    // Mesmo com a empresa de outra organização gravada no usuário, nada vaza.
+    $this->user->forceFill(['current_company_id' => $foreign->id])->save();
+
+    Livewire::actingAs($this->user)->test('pages::documents.index')
+        ->assertSee('FORNECEDOR EXEMPLO LTDA')
         ->assertDontSee('SEGREDO DE OUTRO CLIENTE');
 });
 

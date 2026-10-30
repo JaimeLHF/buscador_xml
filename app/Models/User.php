@@ -6,6 +6,7 @@ use App\Enums\OrganizationRole;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -29,6 +30,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property string|null $remember_token
  * @property int|null $current_organization_id
  * @property-read Organization|null $currentOrganization
+ * @property int|null $current_company_id
+ * @property-read Company|null $currentCompany
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
@@ -92,7 +95,43 @@ class User extends Authenticatable implements PasskeyUser
     {
         abort_unless($this->belongsToOrganization($organization), 403);
 
-        $this->forceFill(['current_organization_id' => $organization->id])->save();
+        // A empresa escolhida pertence à organização anterior: volta para "Todas as empresas".
+        $this->forceFill(['current_organization_id' => $organization->id, 'current_company_id' => null])->save();
+    }
+
+    /** @return BelongsTo<Company, $this> */
+    public function currentCompany(): BelongsTo
+    {
+        return $this->belongsTo(Company::class, 'current_company_id');
+    }
+
+    /** Empresa escolhida no seletor do menu lateral, se for da organização ativa; nula é "Todas as empresas". */
+    public function selectedCompany(): ?Company
+    {
+        $company = $this->currentCompany;
+
+        return $company !== null && $company->organization_id === $this->current_organization_id ? $company : null;
+    }
+
+    /** Escolhe a empresa de trabalho; nula volta para "Todas as empresas". */
+    public function switchCompany(?Company $company): void
+    {
+        abort_if($company !== null && $company->organization_id !== $this->current_organization_id, 403);
+
+        $this->forceFill(['current_company_id' => $company?->id])->save();
+        $this->unsetRelation('currentCompany');
+    }
+
+    /**
+     * Empresas que as telas mostram: a escolhida no seletor ou todas da organização ativa.
+     *
+     * @return Builder<Company>
+     */
+    public function workingCompanies(): Builder
+    {
+        return Company::query()
+            ->where('organization_id', $this->current_organization_id)
+            ->when($this->selectedCompany(), fn (Builder $q, Company $c) => $q->whereKey($c->id));
     }
 
     /**

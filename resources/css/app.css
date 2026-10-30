@@ -89,6 +89,141 @@ select:focus[data-flux-control] {
     @apply size-5;
 }
 
+/* Cabeçalho do submenu (Empresa) no mesmo tamanho dos itens do menu principal. */
+.nav-principal [data-flux-sidebar-group] > button {
+    @apply h-11 text-zinc-500 dark:text-white/80;
+}
+
+.nav-principal [data-flux-sidebar-group] > button > div:first-child {
+    @apply ps-3 pe-3.5;
+}
+
+.nav-principal [data-flux-sidebar-group] > button > div:first-child svg {
+    @apply size-5;
+}
+
+.nav-principal [data-flux-sidebar-group] > button > span {
+    @apply text-base font-normal;
+}
+
+/* Movimento do menu lateral: hover com deslize do ícone, marca do item atual e submenu que se desdobra. */
+.nav-principal [data-flux-sidebar-item],
+.nav-principal [data-flux-sidebar-group] > button {
+    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}
+
+.nav-principal [data-flux-sidebar-item] svg,
+.nav-principal [data-flux-sidebar-group] > button > div:first-child svg {
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-principal [data-flux-sidebar-item]:hover svg,
+.nav-principal [data-flux-sidebar-group] > button:hover > div:first-child svg {
+    transform: translateX(2px) scale(1.06);
+}
+
+.nav-principal [data-flux-sidebar-item][data-current]::before {
+    content: '';
+    position: absolute;
+    inset-block: 0.625rem;
+    inset-inline-start: -1px;
+    width: 3px;
+    border-radius: 2px;
+    background: currentColor;
+    animation: marcar 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes marcar {
+    from {
+        transform: scaleY(0);
+        opacity: 0;
+    }
+}
+
+/* Uma seta só, que gira, no lugar das duas que o Flux troca. */
+.nav-principal [data-flux-sidebar-group] > button > div:last-child svg:last-child {
+    display: none;
+}
+
+.nav-principal [data-flux-sidebar-group] > button > div:last-child svg:first-child {
+    display: block !important;
+    transform: rotate(-90deg);
+    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-principal [data-flux-sidebar-group] > button[data-open] > div:last-child svg:first-child {
+    transform: rotate(0deg);
+}
+
+/* Ao abrir: a linha guia desce e os itens entram em cascata. */
+.nav-principal [data-flux-sidebar-group] > div[data-open] > div:first-child {
+    transform-origin: top;
+    animation: guia 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nav-principal [data-flux-sidebar-group] > div[data-open] [data-flux-sidebar-item] {
+    animation: surgir-lado 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.nav-principal [data-flux-sidebar-group] > div[data-open] > div:last-child > :nth-child(2) [data-flux-sidebar-item] {
+    animation-delay: 50ms;
+}
+
+.nav-principal [data-flux-sidebar-group] > div[data-open] > div:last-child > :nth-child(3) [data-flux-sidebar-item] {
+    animation-delay: 100ms;
+}
+
+@keyframes guia {
+    from {
+        transform: scaleY(0);
+    }
+}
+
+@keyframes surgir-lado {
+    from {
+        opacity: 0;
+        transform: translateX(-8px);
+    }
+}
+
+/* Cartão da empresa: ícone se acende e as setas giram no hover. */
+.cartao-empresa > span:first-child {
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), background-color 180ms ease;
+}
+
+.cartao-empresa:hover > span:first-child {
+    transform: scale(1.06);
+}
+
+.cartao-empresa > svg:last-child {
+    transition: transform 360ms cubic-bezier(0.16, 1, 0.3, 1), color 180ms ease;
+}
+
+.cartao-empresa:hover > svg:last-child {
+    transform: rotate(180deg);
+}
+
+.cartao-empresa:active {
+    transform: scale(0.98);
+}
+
+/* Lista do modal de empresas entra em cascata quando ele abre. */
+dialog[open] .item-empresa {
+    animation: surgir 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: calc(min(var(--i, 0), 10) * 30ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .nav-principal *,
+    .nav-principal *::before,
+    .cartao-empresa,
+    .cartao-empresa *,
+    dialog[open] .item-empresa {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
 /* Barra de progresso indeterminada para sincronização. */
 @keyframes indeterminate {
     0% { transform: translateX(-100%); }
@@ -122,6 +257,75 @@ select:focus[data-flux-control] {
 
 @media (prefers-reduced-motion: reduce) {
     .surgir {
+        animation: none;
+    }
+}
+
+/* Esqueleto de carregamento: blocos cinzas com um brilho que atravessa da esquerda para a direita. */
+/* Em @layer components para que utilitários como block e h-* do Tailwind ainda valham sobre o .osso. */
+@layer components {
+    .osso {
+        position: relative;
+        display: inline-block;
+        overflow: hidden;
+        border-radius: 2px;
+        background-color: var(--color-zinc-200);
+    }
+}
+
+.dark .osso {
+    background-color: var(--color-zinc-800);
+}
+
+.osso::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.55), transparent);
+    animation: brilho 1.4s ease-in-out infinite;
+}
+
+.dark .osso::after {
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
+}
+
+@keyframes brilho {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+/* Entre telas (wire:navigate): o app.js marca #conteudo[data-carregando=<tipo>] e o esqueleto daquele tipo aparece. */
+.esqueleto-pagina,
+.linhas-esqueleto {
+    display: none;
+}
+
+#conteudo[data-carregando] > :not(.esqueleto-pagina) {
+    display: none;
+}
+
+#conteudo[data-carregando='notas'] > .esqueleto-pagina[data-tipo='notas'],
+#conteudo[data-carregando='lista'] > .esqueleto-pagina[data-tipo='lista'],
+#conteudo[data-carregando='detalhe'] > .esqueleto-pagina[data-tipo='detalhe'],
+#conteudo[data-carregando='formulario'] > .esqueleto-pagina[data-tipo='formulario'] {
+    display: block;
+    animation: surgir 200ms ease-out both;
+}
+
+/* Dentro da tela (filtro, busca, página da lista): as linhas dão lugar ao esqueleto, o cabeçalho fica. */
+.lista-carregando > :not(:first-child):not(.linhas-esqueleto) {
+    display: none;
+}
+
+.lista-carregando > .linhas-esqueleto,
+.esqueleto-pagina .linhas-esqueleto {
+    display: block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .osso::after {
         animation: none;
     }
 }

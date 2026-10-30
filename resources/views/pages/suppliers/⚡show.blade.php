@@ -18,7 +18,6 @@ new #[Title('Fornecedor')] class extends Component {
     public string $cnpj;
 
     #[Url] public string $tipo = '';
-    #[Url] public string $company_id = '';
     #[Url] public string $de = '';
     #[Url] public string $ate = '';
 
@@ -28,7 +27,7 @@ new #[Title('Fornecedor')] class extends Component {
 
         // Verify supplier belongs to user's organization
         $exists = DfeDocument::query()
-            ->whereIn('company_id', Auth::user()->currentOrganization->companies()->select('id'))
+            ->whereIn('company_id', Auth::user()->workingCompanies()->select('id'))
             ->where('emitente_cnpj', $this->cnpj)
             ->exists();
 
@@ -45,10 +44,9 @@ new #[Title('Fornecedor')] class extends Component {
     private function baseQuery()
     {
         return DfeDocument::query()
-            ->whereIn('company_id', Auth::user()->currentOrganization->companies()->select('id'))
+            ->whereIn('company_id', Auth::user()->workingCompanies()->select('id'))
             ->where('emitente_cnpj', $this->cnpj)
             ->when(DocumentoTipo::tryFrom($this->tipo), fn ($q, $t) => $q->where('tipo', $t))
-            ->when($this->company_id, fn ($q) => $q->where('company_id', (int) $this->company_id))
             ->when($this->de, fn ($q) => $q->where('data_emissao', '>=', CarbonImmutable::parse($this->de, Fmt::TIMEZONE)->startOfDay()->utc()))
             ->when($this->ate, fn ($q) => $q->where('data_emissao', '<=', CarbonImmutable::parse($this->ate, Fmt::TIMEZONE)->endOfDay()->utc()));
     }
@@ -65,7 +63,7 @@ new #[Title('Fornecedor')] class extends Component {
                 DB::raw('max(data_emissao) as ultima_emissao'),
                 DB::raw('min(data_emissao) as primeira_emissao'),
             ])
-            ->whereIn('company_id', Auth::user()->currentOrganization->companies()->select('id'))
+            ->whereIn('company_id', Auth::user()->workingCompanies()->select('id'))
             ->where('emitente_cnpj', $this->cnpj)
             ->groupBy('emitente_cnpj')
             ->first();
@@ -84,19 +82,13 @@ new #[Title('Fornecedor')] class extends Component {
         ];
     }
 
-    #[Computed]
-    public function companies()
-    {
-        return Auth::user()->currentOrganization->companies()->orderBy('razao_social')->get(['id', 'razao_social', 'cnpj']);
-    }
-
-    /** Empresas desta organização que receberam notas deste fornecedor. */
+    /** Empresas do seletor que receberam notas deste fornecedor. */
     #[Computed]
     public function empresasDestinatarias(): array
     {
         return DfeDocument::query()
             ->select('company_id', DB::raw('count(*) as total'))
-            ->whereIn('company_id', Auth::user()->currentOrganization->companies()->select('id'))
+            ->whereIn('company_id', Auth::user()->workingCompanies()->select('id'))
             ->where('emitente_cnpj', $this->cnpj)
             ->groupBy('company_id')
             ->with('company:id,razao_social,cnpj')
@@ -171,15 +163,6 @@ new #[Title('Fornecedor')] class extends Component {
             @endif
         </flux:radio.group>
 
-        @if ($this->companies->count() > 1)
-            <flux:select wire:model.live="company_id" class="w-48 shrink-0" :aria-label="__('Filtrar por empresa')">
-                <flux:select.option value="">{{ __('Todas as empresas') }}</flux:select.option>
-                @foreach ($this->companies as $c)
-                    <flux:select.option :value="$c->id">{{ $c->razao_social }}</flux:select.option>
-                @endforeach
-            </flux:select>
-        @endif
-
         <flux:input type="date" wire:model.live="de" :aria-label="__('De')" class="w-36" />
         <flux:input type="date" wire:model.live="ate" :aria-label="__('Até')" class="w-36" />
     </div>
@@ -195,7 +178,7 @@ new #[Title('Fornecedor')] class extends Component {
         ];
     @endphp
 
-    <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.class="opacity-60" wire:target="tipo,company_id,de,ate,gotoPage,nextPage,previousPage">
+    <div class="border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900/40" wire:loading.delay.class="lista-carregando" wire:target="tipo,de,ate,gotoPage,nextPage,previousPage">
         <div class="{{ $grade }} border-b border-zinc-200 px-4 py-2 text-xs font-medium tracking-wide text-zinc-500 uppercase max-md:hidden dark:border-zinc-700 dark:text-zinc-400" aria-hidden="true">
             <span>{{ __('Emissão') }}</span>
             <span>{{ __('Destinatário') }}</span>
@@ -203,6 +186,8 @@ new #[Title('Fornecedor')] class extends Component {
             <span>{{ __('Estado') }}</span>
             <span class="text-end">{{ __('Arquivos') }}</span>
         </div>
+
+        <x-esqueleto.linhas />
 
         @forelse ($this->documents as $doc)
             @php
